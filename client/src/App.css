@@ -63,13 +63,19 @@
 
 /* ─── Board ──────────────────────────────────────────── */
 .board-wrap {
+  container-type: size;
   display: flex;
-  align-items: stretch;
+  align-items: center;
+  justify-content: center;
   min-height: 0;
+  overflow: hidden;
 }
 
 .board {
-  flex: 1;
+  /* Square that fits inside whatever space the column provides */
+  width:  min(100cqw, 100cqh);
+  height: min(100cqw, 100cqh);
+  flex-shrink: 0;
   display: grid;
   grid-template-columns: repeat(9, 1fr);
   grid-template-rows:    repeat(9, 1fr);
