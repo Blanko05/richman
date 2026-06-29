@@ -11,8 +11,8 @@
 .lobby h1      { font-size: 42px; color: var(--accent); }
 .tagline       { color: var(--text-dim); margin-bottom: 24px; }
 .lobby-card {
-  background: var(--panel);
-  border: 1px solid var(--border);
+  background: var(--panel-2);
+  border: 2px solid var(--border);
   border-radius: 12px;
   padding: 24px;
   width: 320px;
@@ -29,7 +29,7 @@
   color: var(--text-dim);
 }
 .divider { text-align: center; color: var(--text-dim); font-size: 13px; margin: 4px 0; }
-.error   { color: #ff6b6b; font-size: 14px; }
+.error   { color: #cc1212; font-size: 14px; }
 
 /* ─── Game screen: 3 columns ────────────────────────── */
 .game-screen {
@@ -56,8 +56,8 @@
 .placeholder-block {
   flex: 1;
   background: var(--panel);
-  border: 1px solid var(--border);
-  border-radius: 12px;
+  border: 2px solid var(--border);
+  border-radius: 10px;
   min-height: 0;
 }
 
@@ -72,16 +72,15 @@
 }
 
 .board {
-  /* Fill the full board-wrap in both directions so tiles reach the column edges */
   width:  100cqw;
   height: 100cqh;
   display: grid;
-  /* Corners are 1.6× edge tiles; edge tiles bumped to 1.3fr to be a bit bigger */
   grid-template-columns: 1.6fr repeat(7, 1.3fr) 1.6fr;
   grid-template-rows:    1.6fr repeat(7, 1.3fr) 1.6fr;
+  /* Classic Monopoly sage-green center */
   background: var(--panel);
-  border: 1px solid var(--border);
-  border-radius: 12px;
+  border: 3px solid var(--border);
+  border-radius: 6px;
   overflow: hidden;
 }
 
@@ -101,13 +100,11 @@
 /* ─── Tile base ──────────────────────────────────────── */
 .tile {
   position: relative;
-  /* container-type lets children use 100cqw / 100cqh to get the tile's own dimensions,
-     which is the key to rotating side-column content without overflow */
+  /* container-type lets rotated children use 100cqw/100cqh of the tile's own size */
   container-type: size;
-  border: 1px solid rgba(255, 255, 255, 0.06);
-  background: linear-gradient(160deg, #0e2218 0%, #0a1a10 100%);
+  border: 1px solid var(--border);
+  background: var(--panel-2);
   overflow: hidden;
-  border-radius: 8px;
 }
 
 .tile-pending {
@@ -116,12 +113,12 @@
   z-index: 1;
 }
 
-/* ─── Corner tiles: slightly lighter card ────────────── */
+/* ─── Corner tiles ───────────────────────────────────── */
 .tile-corner {
-  background: linear-gradient(160deg, #132b1c 0%, #0c1f14 100%);
+  background: var(--panel-2);
 }
 
-/* ─── Rotatable content wrapper (glow + strip + body) ── */
+/* ─── Rotatable content wrapper ─────────────────────── */
 .tile-content {
   position: absolute;
   inset: 0;
@@ -129,10 +126,9 @@
   flex-direction: column;
 }
 
-/* Left column: rotate 90° CW so tile's "top" faces right (toward board) */
+/* Left column → rotate 90° CW so strip faces right (toward board) */
 .tile-rotate-cw .tile-content {
   inset: unset;
-  /* Swap dimensions before rotation so the content fills the tile after the transform */
   width:  100cqh;
   height: 100cqw;
   top:  50%;
@@ -140,7 +136,7 @@
   transform: translate(-50%, -50%) rotate(90deg);
 }
 
-/* Right column: rotate 90° CCW so tile's "top" faces left (toward board) */
+/* Right column → rotate 90° CCW so strip faces left (toward board) */
 .tile-rotate-ccw .tile-content {
   inset: unset;
   width:  100cqh;
@@ -150,79 +146,57 @@
   transform: translate(-50%, -50%) rotate(-90deg);
 }
 
-/* ─── Glow blob (inside tile-content, rotates with it) ── */
-.tile-glow {
-  position: absolute;
-  top: -55%;
-  left: 50%;
-  transform: translateX(-50%);
-  width: 130%;
-  height: 90%;
-  border-radius: 50%;
-  filter: blur(18px);
-  opacity: 0.18;
-  pointer-events: none;
-  z-index: 0;
+/* Top row → rotate 180° so strip faces down (toward board center) */
+.tile-rotate-180 .tile-content {
+  transform: rotate(180deg);
 }
 
-/* ─── Color strip at the very top ───────────────────── */
+/* ─── Property color strip (thick, classic Monopoly style) */
 .tile-strip {
-  flex-shrink: 0;
-  height: 3px;
+  /* ~28% of the tile height — flex-basis so it doesn't shrink */
+  flex: 0 0 28%;
   width: 100%;
-  position: relative;
-  z-index: 1;
 }
 
-/* ─── Tile body (name / icon / price) ────────────────── */
+/* ─── Tile body ──────────────────────────────────────── */
 .tile-body {
-  position: relative;
-  z-index: 1;
   flex: 1;
   display: flex;
   flex-direction: column;
   justify-content: center;
   align-items: center;
-  padding: 4px 3px;
-  gap: 2px;
+  padding: 3px 2px;
+  gap: 1px;
   text-align: center;
 }
 
 .tile-body-corner {
-  gap: 3px;
-}
-
-/* ─── Group membership dot ───────────────────────────── */
-.tile-dot {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  flex-shrink: 0;
-  box-shadow: 0 0 5px currentColor;
+  gap: 4px;
 }
 
 .tile-name {
-  font-size: 7.5px;
+  font-size: 7px;
   font-weight: 700;
   line-height: 1.2;
   color: var(--text);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
 }
 
 .tile-icon {
-  font-size: 15px;
+  font-size: 14px;
   line-height: 1;
 }
 
 .tile-icon-lg {
-  font-size: 24px;
+  font-size: 26px;
   line-height: 1;
 }
 
 .tile-price {
-  font-size: 7.5px;
-  color: var(--text-dim);
-  font-weight: 700;
-  letter-spacing: 0.02em;
+  font-size: 6.5px;
+  color: var(--text);
+  font-weight: 600;
 }
 
 /* ─── Ownership badge ────────────────────────────────── */
@@ -233,6 +207,7 @@
   width: 13px;
   height: 13px;
   border-radius: 3px;
+  border: 1px solid rgba(0,0,0,0.25);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -257,7 +232,7 @@
   width: 11px;
   height: 11px;
   border-radius: 50%;
-  border: 1.5px solid rgba(255, 255, 255, 0.5);
+  border: 1.5px solid rgba(0,0,0,0.3);
 }
 
 /* ─── Board center ───────────────────────────────────── */
@@ -268,20 +243,20 @@
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 8px;
-  color: var(--accent);
-  font-size: 20px;
-  letter-spacing: 3px;
+  gap: 6px;
+  color: var(--border);
+  font-size: 18px;
+  letter-spacing: 4px;
   text-transform: uppercase;
-  opacity: 0.45;
-  font-weight: 700;
+  font-weight: 800;
+  opacity: 0.5;
   pointer-events: none;
 }
 
 /* ─── HUD (hidden during layout phase) ──────────────── */
 .hud { display: none; }
 .hud-section {
-  background: var(--panel);
+  background: var(--panel-2);
   border: 1px solid var(--border);
   border-radius: 12px;
   padding: 14px;
@@ -295,30 +270,25 @@
 .leave-btn {
   font-size: 12px;
   padding: 5px 10px;
-  background: var(--panel-2);
+  background: var(--panel);
   color: var(--text-dim);
 }
-.badge-warn { background: #4a2a2a; color: #ff9a9a; }
-.turn-countdown       { font-size: 13px; color: var(--text-dim); margin: 4px 0; }
-.turn-countdown-urgent { color: #ff6b6b; font-weight: 600; }
-.hint      { color: var(--text-dim); font-size: 13px; }
+.badge-warn { background: #fce8e8; color: #cc1212; }
+.turn-countdown        { font-size: 13px; color: var(--text-dim); margin: 4px 0; }
+.turn-countdown-urgent { color: #cc1212; font-weight: 600; }
+.hint       { color: var(--text-dim); font-size: 13px; }
 .dice-display { font-size: 20px; margin: 8px 0; }
 .card-display {
-  background: var(--panel-2);
+  background: var(--panel);
   border-radius: 8px;
   padding: 8px;
   font-size: 13px;
 }
-.action-row { display: flex; gap: 8px; flex-wrap: wrap; }
-.buy-prompt {
-  background: var(--panel-2);
-  border-radius: 8px;
-  padding: 10px;
-  margin-top: 8px;
-}
+.action-row  { display: flex; gap: 8px; flex-wrap: wrap; }
+.buy-prompt  { background: var(--panel); border-radius: 8px; padding: 10px; margin-top: 8px; }
 .build-panel { margin-top: 10px; }
 .trade-list  { display: flex; flex-direction: column; gap: 10px; margin-bottom: 10px; }
-.trade-card  { background: var(--panel-2); border-radius: 8px; padding: 10px; }
+.trade-card  { background: var(--panel); border-radius: 8px; padding: 10px; }
 .trade-summary p { margin: 2px 0; }
 .trade-side  { font-size: 13px; color: var(--text-dim); }
 .trade-field { display: flex; flex-direction: column; gap: 4px; font-size: 13px; color: var(--text-dim); margin: 8px 0; }
@@ -333,18 +303,18 @@
 .build-row .build-btn { width: auto; margin-top: 0; flex-shrink: 0; }
 .winner-banner {
   text-align: center;
-  background: linear-gradient(135deg, var(--accent), #ffe9a8);
-  color: #1a1305;
+  background: linear-gradient(135deg, var(--accent), #ffd700);
+  color: #fff;
 }
 .player-list { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 8px; }
 .player-list li { display: flex; align-items: center; gap: 8px; font-size: 13px; }
 .player-list li.bankrupt { opacity: 0.4; text-decoration: line-through; }
-.swatch { width: 11px; height: 11px; border-radius: 50%; flex-shrink: 0; }
+.swatch    { width: 11px; height: 11px; border-radius: 50%; flex-shrink: 0; }
 .p-name    { flex: 1; }
 .p-balance { font-weight: 600; }
 .badge {
   font-size: 10px;
-  background: var(--panel-2);
+  background: var(--panel);
   border-radius: 5px;
   padding: 2px 5px;
   color: var(--text-dim);
@@ -361,13 +331,9 @@
 
 /* ─── Responsive ─────────────────────────────────────── */
 @media (max-width: 1100px) {
-  .game-screen {
-    grid-template-columns: 200px 1fr 260px;
-  }
+  .game-screen { grid-template-columns: 200px 1fr 260px; }
 }
 @media (max-width: 860px) {
-  .game-screen {
-    grid-template-columns: 1fr;
-  }
+  .game-screen { grid-template-columns: 1fr; }
   .left-sidebar { display: none; }
 }

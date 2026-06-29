@@ -1,64 +1,56 @@
 :root {
-  --bg: #0f1320;
-  --panel: #181d2e;
-  --panel-2: #1f2640;
-  --text: #e8e9f3;
-  --text-dim: #9aa0b4;
-  --accent: #f4c542;
-  --border: #2c3350;
+  /* ── Classic Monopoly palette ── */
+  --bg:       #1c3c1c;          /* dark green outer */
+  --panel:    #c8dcc8;          /* sage/mint green  */
+  --panel-2:  #ffffff;          /* white tiles      */
+  --panel-3:  #eef5ee;          /* light mint       */
+  --border:   #2a5a28;          /* dark green border */
+  --text:     #111111;
+  --text-dim: #555555;
+  --accent:   #cc1212;          /* Monopoly red     */
+  --accent-2: #2a5a28;
 
-  --g-copper: #b5651d;
-  --g-teal: #16a596;
-  --g-violet: #8e44ad;
-  --g-amber: #f39c12;
-  --g-crimson: #c0392b;
-  --g-azure: #2980b9;
-  --g-jade: #27ae60;
-  --g-obsidian: #2c3e50;
+  /* Classic Monopoly property-group colors */
+  --g-copper:   #7b3f00;   /* brown      */
+  --g-teal:     #00aeef;   /* light blue */
+  --g-violet:   #c2185b;   /* pink       */
+  --g-amber:    #f7941d;   /* orange     */
+  --g-crimson:  #ed1b24;   /* red        */
+  --g-azure:    #fef200;   /* yellow     */
+  --g-jade:     #1fb25a;   /* green      */
+  --g-obsidian: #0072bb;   /* dark blue  */
 
-  font: 16px/1.4 system-ui, "Segoe UI", Roboto, sans-serif;
+  font: 15px/1.4 system-ui, "Segoe UI", Roboto, sans-serif;
   color: var(--text);
   background: var(--bg);
 }
 
-* {
-  box-sizing: border-box;
-}
+* { box-sizing: border-box; }
 
 body {
   margin: 0;
   min-height: 100vh;
-  background: radial-gradient(circle at top, #1a2038 0%, var(--bg) 60%);
+  background: var(--bg);
 }
 
-#root {
-  min-height: 100vh;
-}
+#root { min-height: 100vh; }
 
 button {
   font: inherit;
   cursor: pointer;
   border: none;
   border-radius: 8px;
-  padding: 10px 16px;
-  background: var(--panel-2);
+  padding: 9px 16px;
+  background: var(--panel);
   color: var(--text);
-  transition: filter 0.15s ease;
+  transition: filter 0.15s;
 }
-
-button:hover:not(:disabled) {
-  filter: brightness(1.15);
-}
-
-button:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
+button:hover:not(:disabled) { filter: brightness(0.92); }
+button:disabled { opacity: 0.45; cursor: not-allowed; }
 button.primary {
   background: var(--accent);
-  color: #1a1305;
-  font-weight: 600;
+  color: #fff;
+  font-weight: 700;
 }
 
 input {
@@ -66,11 +58,9 @@ input {
   padding: 8px 10px;
   border-radius: 6px;
   border: 1px solid var(--border);
-  background: var(--panel);
+  background: var(--panel-2);
   color: var(--text);
   width: 100%;
 }
 
-h1, h2, h3 {
-  margin: 0 0 8px;
-}
+h1, h2, h3 { margin: 0 0 8px; }

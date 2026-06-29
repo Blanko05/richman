@@ -10,27 +10,15 @@ function isCornerTile(id) {
 }
 
 const TYPE_ICON = {
-  start:         "🏠",
-  tax:           "💸",
-  surprise:      "❓",
-  treasure:      "🎁",
-  transit:       "🚇",
-  utility:       "⚡",
-  rest:          "🌳",
-  holding:       "🔒",
+  start:         "▶",
+  tax:           "💰",
+  surprise:      "?",
+  treasure:      "📬",
+  transit:       "🚂",
+  utility:       "💡",
+  rest:          "🅿",
+  holding:       "⛓",
   go_to_holding: "👮",
-};
-
-const TYPE_GLOW = {
-  surprise:      "#ec4899",
-  treasure:      "#f4c542",
-  tax:           "#f97316",
-  transit:       "#3b82f6",
-  utility:       "#facc15",
-  rest:          "#10b981",
-  holding:       "#94a3b8",
-  go_to_holding: "#ef4444",
-  start:         "#10b981",
 };
 
 function seededRand(seed) {
@@ -58,14 +46,17 @@ export default function Board({ board, ownership, players, pendingAction }) {
         const occupants  = players.filter((p) => p.position === tile.id && !p.bankrupt);
         const isPending  = pendingAction?.tileId === tile.id;
 
-        const glowColor  = tile.group ? `var(--g-${tile.group})` : (TYPE_GLOW[tile.type] ?? "transparent");
-        const stripColor = tile.group ? `var(--g-${tile.group})` : (TYPE_GLOW[tile.type] ?? null);
+        // Strip only for property tiles (has a group color)
+        const stripColor = tile.group ? `var(--g-${tile.group})` : null;
 
-        // Left col (col 1, not corner): rotate CW so content faces right toward board
-        // Right col (col 9, not corner): rotate CCW so content faces left toward board
+        // Rotation: side columns face inward; top row is upside-down (classic Monopoly)
         const isLeftCol  = !isCorner && pos.col === 1;
         const isRightCol = !isCorner && pos.col === 9;
-        const rotateClass = isLeftCol ? "tile-rotate-cw" : isRightCol ? "tile-rotate-ccw" : "";
+        const isTopRow   = !isCorner && pos.row === 1;
+        const rotateClass = isLeftCol  ? "tile-rotate-cw"
+                          : isRightCol ? "tile-rotate-ccw"
+                          : isTopRow   ? "tile-rotate-180"
+                          : "";
 
         return (
           <div
@@ -85,12 +76,12 @@ export default function Board({ board, ownership, players, pendingAction }) {
               animationDuration: `${TILE_DURS[tile.id]}s`,
             }}
           >
-            {/* Rotatable inner content — glow + strip + body all spin together */}
             <div className="tile-content">
-              <div className="tile-glow" style={{ background: glowColor }} />
+              {/* Thick colored strip — only for properties, always at the inner edge */}
               {stripColor && (
                 <div className="tile-strip" style={{ background: stripColor }} />
               )}
+
               <div className={`tile-body ${isCorner ? "tile-body-corner" : ""}`}>
                 {isCorner ? (
                   <>
@@ -99,20 +90,15 @@ export default function Board({ board, ownership, players, pendingAction }) {
                   </>
                 ) : (
                   <>
-                    {tile.group && (
-                      <div className="tile-dot" style={{ background: `var(--g-${tile.group})` }} />
-                    )}
+                    {/* Non-property tiles show a large icon */}
                     {tile.type !== "property" && TYPE_ICON[tile.type] && (
                       <div className="tile-icon">{TYPE_ICON[tile.type]}</div>
                     )}
                     <div className="tile-name">{tile.name}</div>
                     {"price" in tile && (
-                      <div
-                        className="tile-price"
-                        style={{ color: tile.type === "tax" ? "#f97316" : undefined }}
-                      >
+                      <div className="tile-price">
                         {tile.type === "tax"
-                          ? `-$${tile.amount ?? tile.price}`
+                          ? `Pay $${tile.amount ?? tile.price}`
                           : `$${tile.price}`}
                       </div>
                     )}
@@ -121,7 +107,7 @@ export default function Board({ board, ownership, players, pendingAction }) {
               </div>
             </div>
 
-            {/* Ownership badge — not rotated, always top-right of physical tile */}
+            {/* Ownership badge — pinned to physical tile, not rotated */}
             {owned && (
               <div
                 className={`tile-owner ${owned.mortgaged ? "tile-owner-mortgaged" : ""}`}
@@ -135,7 +121,7 @@ export default function Board({ board, ownership, players, pendingAction }) {
               </div>
             )}
 
-            {/* Player tokens — not rotated, always bottom-left of physical tile */}
+            {/* Player tokens — pinned to physical tile, not rotated */}
             <div className="tile-tokens">
               {occupants.map((p) => (
                 <span key={p.id} className="token" style={{ background: p.color }} title={p.name} />
@@ -146,7 +132,8 @@ export default function Board({ board, ownership, players, pendingAction }) {
       })}
 
       <div className="board-center">
-        <h2>Fortune City</h2>
+        <span>Fortune</span>
+        <span>City</span>
       </div>
     </div>
   );
