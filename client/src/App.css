@@ -7,6 +7,7 @@
   justify-content: center;
   padding: 24px;
   text-align: center;
+  background: var(--bg);
 }
 .lobby h1  { font-size: 42px; color: var(--accent); font-weight: 900; }
 .tagline   { color: var(--text-dim); margin-bottom: 24px; }
@@ -21,29 +22,26 @@
   gap: 12px;
   text-align: left;
 }
-.lobby-card label {
-  display: flex; flex-direction: column;
-  gap: 6px; font-size: 13px; color: var(--text-dim);
-}
+.lobby-card label { display: flex; flex-direction: column; gap: 6px; font-size: 13px; color: var(--text-dim); }
 .divider { text-align: center; color: var(--text-dim); font-size: 13px; margin: 4px 0; }
 .error   { color: #ed1c24; font-size: 13px; }
 
-/* ─── Game screen: board fills the viewport ─────────── */
+/* ─── Game screen ────────────────────────────────────── */
 .game-screen {
-  width:  100vw;
+  width: 100vw;
   height: 100vh;
   display: flex;
   align-items: center;
   justify-content: center;
-  background: var(--bg);   /* dark green surround */
+  background: var(--bg);
 }
 
 /* ─── Board ──────────────────────────────────────────── */
 .board {
   /*
-   * Keep the board a perfect square (Monopoly boards are square).
-   * 5fr corners : 3fr regular = 2.5" : 1.5" — exact Monopoly ratio.
-   * background #000 shows as 1 px black grid lines through the gap.
+   * Square board — min of viewport dims so it always fits.
+   * 5fr corners : 3fr regular ≈ 2.5" : 1.5" (exact Monopoly ratio).
+   * background: #000 shows as 1 px black grid lines through the gap.
    */
   width:  min(100vw, 100vh);
   height: min(100vw, 100vh);
@@ -53,7 +51,7 @@
   background: #000;
   gap: 1px;
   border: 3px solid #000;
-  box-shadow: 0 6px 32px rgba(0,0,0,0.55);
+  box-shadow: 0 8px 40px rgba(0,0,0,0.6);
 }
 
 /* ─── Tile drop animation ────────────────────────────── */
@@ -62,7 +60,6 @@
   75%  { opacity: 1; }
   100% { transform: translateY(0);      opacity: 1; }
 }
-
 .tile-enter {
   opacity: 0;
   animation-name: tileDrop;
@@ -73,23 +70,17 @@
 /* ─── Tile base ──────────────────────────────────────── */
 .tile {
   position: relative;
-  container-type: size;   /* lets children use 100cqw / 100cqh */
+  container-type: size;
   background: #fff;
   overflow: hidden;
   cursor: default;
-  transition: filter 0.15s;
 }
-.tile:hover { filter: brightness(0.94); }
-
-/* Pending — red outline ring */
+.tile-corner { background: #fff; }
 .tile-pending {
   outline: 2px solid var(--accent);
   outline-offset: -2px;
   z-index: 1;
 }
-
-/* Corner tiles: same white, can add distinct bg if needed */
-.tile-corner { background: #fff; }
 
 /* ─── Rotatable content wrapper ─────────────────────── */
 .tile-content {
@@ -99,33 +90,29 @@
   flex-direction: column;
 }
 
-/* Left column → 90° CW  (strip faces right = board center) */
+/* Left col → 90° CW (strip faces right = board center) */
 .tile-rotate-cw .tile-content {
   inset: unset;
-  width:  100cqh;
-  height: 100cqw;
+  width: 100cqh; height: 100cqw;
   top: 50%; left: 50%;
   transform: translate(-50%, -50%) rotate(90deg);
 }
 
-/* Right column → 90° CCW (strip faces left = board center) */
+/* Right col → 90° CCW (strip faces left = board center) */
 .tile-rotate-ccw .tile-content {
   inset: unset;
-  width:  100cqh;
-  height: 100cqw;
+  width: 100cqh; height: 100cqw;
   top: 50%; left: 50%;
   transform: translate(-50%, -50%) rotate(-90deg);
 }
 
 /* Top row → 180° (strip faces down = board center) */
-.tile-rotate-180 .tile-content {
-  transform: rotate(180deg);
-}
+.tile-rotate-180 .tile-content { transform: rotate(180deg); }
 
 /* ─── Property color strip ───────────────────────────── */
 /*
- * 28% is close to the real Monopoly proportion:
- * strip ≈ 17mm of the 62mm visible depth → 27%
+ * Real Monopoly strip is ~17 mm of the 62 mm visible tile depth ≈ 27%.
+ * We use 28% for a clean visual match.
  */
 .tile-strip {
   flex: 0 0 28%;
@@ -139,55 +126,216 @@
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  padding: 3px 2px 2px;
-  gap: 1px;
+  padding: clamp(2px, 3cqmin, 5px) clamp(2px, 2.5cqmin, 5px);
+  gap: clamp(1px, 1.2cqmin, 3px);
   text-align: center;
 }
 
-/* Property tiles: name top, price bottom of body space */
+/* Property: name centred, price at bottom */
 .tile-body-property {
   justify-content: space-between;
+  padding-top:    clamp(3px, 4cqmin, 8px);
+  padding-bottom: clamp(2px, 3cqmin, 6px);
 }
 
-/* Corner tiles: larger icon, name */
+/* Corner: content centred */
 .tile-body-corner {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
   justify-content: center;
-  gap: 4px;
+  padding: clamp(3px, 4cqmin, 10px);
 }
 
-/* ─── Tile text ──────────────────────────────────────── */
+/* ─── Text ───────────────────────────────────────────── */
 .tile-name {
-  font-size: 7px;
+  font-size: clamp(5.5px, 8.5cqmin, 10px);
   font-weight: 700;
-  font-family: Arial, "Helvetica Neue", sans-serif;
+  font-family: Arial Narrow, Arial, "Helvetica Neue", sans-serif;
   color: #000;
   text-transform: uppercase;
-  letter-spacing: 0.03em;
+  letter-spacing: 0.02em;
   line-height: 1.15;
 }
 
-.tile-icon    { font-size: 13px; line-height: 1; }
-.tile-icon-lg { font-size: 26px; line-height: 1; }
+.tile-icon    { font-size: clamp(10px, 15cqmin, 20px); line-height: 1; }
+.tile-icon-lg { font-size: clamp(18px, 28cqmin, 44px); line-height: 1; }
 
 .tile-price {
-  font-size: 6.5px;
+  font-size: clamp(5px, 7.5cqmin, 9px);
   font-weight: 700;
-  font-family: Arial, "Helvetica Neue", sans-serif;
+  font-family: Arial Narrow, Arial, sans-serif;
   color: #000;
   letter-spacing: 0.02em;
 }
 
-/* Chance "?" — styled in Monopoly orange */
+/* ─── Chance "?" — Monopoly orange ──────────────────── */
 .tile-chance-mark {
-  font-size: 18px;
+  font-size: clamp(16px, 26cqmin, 40px);
   font-weight: 900;
   color: #f7941d;
   line-height: 1;
+  font-style: italic;
 }
 
-/* Community Chest / Treasure colored top */
-.tile-treasure { background: #fff; }
-.tile-surprise  { background: #fff; }
+/* ─── Community Chest (treasure) mark ───────────────── */
+.tile-chest-mark {
+  font-size: clamp(13px, 20cqmin, 30px);
+  line-height: 1;
+  /* classic Monopoly community-chest blue */
+  filter: drop-shadow(0 0 1px #0072bb);
+}
+
+/* ─── Corner: GO ─────────────────────────────────────── */
+.corner-go-wrap {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: clamp(1px, 2cqmin, 5px);
+  width: 100%;
+  height: 100%;
+}
+
+.corner-collect {
+  font-size: clamp(4px, 6cqmin, 9px);
+  font-weight: 700;
+  font-family: Arial Narrow, Arial, sans-serif;
+  color: #000;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  line-height: 1.2;
+  text-align: center;
+}
+
+.corner-arrow {
+  font-size: clamp(22px, 34cqmin, 52px);
+  font-weight: 900;
+  color: #ed1c24;   /* Monopoly red */
+  line-height: 1;
+}
+
+.corner-go-label {
+  font-size: clamp(14px, 22cqmin, 34px);
+  font-weight: 900;
+  font-family: Arial Black, Arial, sans-serif;
+  color: #ed1c24;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  line-height: 1;
+}
+
+/* ─── Corner: Jail / Just Visiting ───────────────────── */
+.corner-jail-wrap {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: clamp(2px, 3cqmin, 6px);
+  border: clamp(1px, 1.5cqmin, 3px) solid var(--g-crimson);
+  box-sizing: border-box;
+}
+
+.corner-jail-visiting {
+  font-size: clamp(4.5px, 7cqmin, 10px);
+  font-weight: 700;
+  color: #000;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  line-height: 1.15;
+  text-align: center;
+}
+
+.corner-jail-bars {
+  display: flex;
+  gap: clamp(2px, 2.5cqmin, 5px);
+  align-items: stretch;
+  height: clamp(10px, 15cqmin, 28px);
+}
+
+.jail-bar {
+  width: clamp(1.5px, 2cqmin, 4px);
+  background: #333;
+  border-radius: 1px;
+}
+
+.corner-jail-label {
+  font-size: clamp(4.5px, 7cqmin, 10px);
+  font-weight: 700;
+  color: var(--g-crimson);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+/* ─── Corner: Free Parking ───────────────────────────── */
+.corner-parking-wrap {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: clamp(1px, 2cqmin, 4px);
+  width: 100%;
+  height: 100%;
+}
+
+.corner-parking-icon {
+  font-size: clamp(18px, 26cqmin, 40px);
+  line-height: 1;
+}
+
+.corner-parking-label {
+  font-size: clamp(8px, 13cqmin, 20px);
+  font-weight: 900;
+  font-family: Arial Black, Arial, sans-serif;
+  color: #ed1c24;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.corner-parking-sub {
+  font-size: clamp(4.5px, 7cqmin, 10px);
+  font-weight: 700;
+  color: #000;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+/* ─── Corner: Go To Jail ─────────────────────────────── */
+.corner-gtj-wrap {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: clamp(1px, 2cqmin, 4px);
+  width: 100%;
+  height: 100%;
+}
+
+.corner-gtj-icon {
+  font-size: clamp(20px, 28cqmin, 44px);
+  line-height: 1;
+}
+
+.corner-gtj-label {
+  font-size: clamp(5.5px, 8.5cqmin, 13px);
+  font-weight: 900;
+  font-family: Arial Black, Arial, sans-serif;
+  color: #000;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.corner-gtj-jail {
+  font-size: clamp(7px, 11cqmin, 17px);
+  font-weight: 900;
+  font-family: Arial Black, Arial, sans-serif;
+  color: #ed1c24;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
 
 /* ─── Ownership badge ────────────────────────────────── */
 .tile-owner {
@@ -220,34 +368,41 @@
 .board-center {
   grid-row:    2 / 9;
   grid-column: 2 / 9;
-  background: #c5dbc5;    /* classic Monopoly sage-green */
+  background: #c5dbc5;   /* classic Monopoly sage-green */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+}
+
+.board-center-logo {
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: center;
   gap: 0;
-  pointer-events: none;
-  border: none;
 }
 
-.board-center-title {
-  font-size: clamp(14px, 2.8vw, 44px);
+.board-center-f,
+.board-center-c {
+  display: block;
+  font-family: "Arial Black", Impact, "Haettenschweiler", sans-serif;
+  font-size: clamp(16px, 3.2vw, 52px);
   font-weight: 900;
   text-transform: uppercase;
-  letter-spacing: 0.18em;
-  color: #1a3a1a;
-  opacity: 0.55;
-  line-height: 1.05;
+  letter-spacing: 0.22em;
+  line-height: 1.0;
+  /* Classic Monopoly: title in dark red with thick black shadow */
+  color: #ed1c24;
+  -webkit-text-stroke: clamp(0.5px, 0.09vw, 1.5px) #000;
+  text-shadow:
+    clamp(1px, 0.18vw, 3px) clamp(1px, 0.18vw, 3px) 0 #000,
+    clamp(-1px, -0.09vw, -2px) clamp(1px, 0.18vw, 3px) 0 #000;
+  opacity: 0.82;
 }
 
 /* ─── HUD ────────────────────────────────────────────── */
 .hud { display: none; }
-.hud-section {
-  background: #fff;
-  border: 1px solid #000;
-  border-radius: 8px;
-  padding: 14px;
-}
+.hud-section { background: #fff; border: 1px solid #000; border-radius: 8px; padding: 14px; }
 .room-header { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .leave-btn   { font-size: 12px; padding: 5px 10px; background: #f0f0f0; color: #333; }
 .badge-warn  { background: #ffe0e0; color: #cc0000; }

@@ -9,25 +9,13 @@ function isCornerTile(id) {
   return id === 0 || id === 8 || id === 16 || id === 24;
 }
 
-/*
- * Icons chosen to match classic Monopoly archetypes:
- *   start      → GO arrow
- *   transit    → steam locomotive (Railroad)
- *   utility    → light bulb (Electric Company)
- *   tax        → coin stack (Income / Luxury Tax)
- *   surprise   → ? (Chance — styled orange in CSS)
- *   treasure   → chest (Community Chest)
- *   rest       → car (Free Parking)
- *   holding    → bars (Just Visiting / Jail)
- *   go_to_holding → officer (Go to Jail)
- */
 const TYPE_ICON = {
-  start:         "▶",
+  start:         "→",
   transit:       "🚂",
   utility:       "💡",
-  tax:           "💰",
-  surprise:      "?",       // styled separately as orange
-  treasure:      "📦",
+  tax:           "⚖",
+  surprise:      "?",
+  treasure:      "📬",
   rest:          "🚗",
   holding:       "🔒",
   go_to_holding: "👮",
@@ -47,6 +35,68 @@ const TILE_DELAYS = Array.from({ length: 32 }, () => {
 });
 const TILE_DURS = Array.from({ length: 32 }, () => 0.45 + rand() * 0.15);
 
+/* ─── Corner tile renderers — one per Monopoly archetype ── */
+function CornerGo({ name }) {
+  return (
+    <div className="corner-go-wrap">
+      <div className="corner-collect">Collect $200<br />Salary As You Pass</div>
+      <div className="corner-arrow">→</div>
+      <div className="corner-go-label">GO</div>
+    </div>
+  );
+}
+
+function CornerJail({ name }) {
+  return (
+    <div className="corner-jail-wrap">
+      <div className="corner-jail-visiting">Just<br />Visiting</div>
+      <div className="corner-jail-bars">
+        <div className="jail-bar" />
+        <div className="jail-bar" />
+        <div className="jail-bar" />
+        <div className="jail-bar" />
+      </div>
+      <div className="corner-jail-label">{name}</div>
+    </div>
+  );
+}
+
+function CornerParking({ name }) {
+  return (
+    <div className="corner-parking-wrap">
+      <div className="corner-parking-icon">🚗</div>
+      <div className="corner-parking-label">Free</div>
+      <div className="corner-parking-sub">{name}</div>
+    </div>
+  );
+}
+
+function CornerGoToJail({ name }) {
+  return (
+    <div className="corner-gtj-wrap">
+      <div className="corner-gtj-icon">👮</div>
+      <div className="corner-gtj-label">Go To</div>
+      <div className="corner-gtj-jail">{name}</div>
+    </div>
+  );
+}
+
+function CornerContent({ tile }) {
+  switch (tile.type) {
+    case "start":         return <CornerGo          name={tile.name} />;
+    case "holding":       return <CornerJail        name={tile.name} />;
+    case "rest":          return <CornerParking     name={tile.name} />;
+    case "go_to_holding": return <CornerGoToJail    name={tile.name} />;
+    default:
+      return (
+        <>
+          <div className="tile-icon-lg">{TYPE_ICON[tile.type] ?? "★"}</div>
+          <div className="tile-name">{tile.name}</div>
+        </>
+      );
+  }
+}
+
 export default function Board({ board, ownership, players, pendingAction }) {
   return (
     <div className="board">
@@ -58,10 +108,8 @@ export default function Board({ board, ownership, players, pendingAction }) {
         const occupants  = players.filter((p) => p.position === tile.id && !p.bankrupt);
         const isPending  = pendingAction?.tileId === tile.id;
 
-        // Strip color — only property tiles get the thick color band
         const stripColor = tile.group ? `var(--g-${tile.group})` : null;
 
-        // Rotation: left col CW, right col CCW, top row 180°
         const isLeftCol  = !isCorner && pos.col === 1;
         const isRightCol = !isCorner && pos.col === 9;
         const isTopRow   = !isCorner && pos.row === 1;
@@ -72,6 +120,7 @@ export default function Board({ board, ownership, players, pendingAction }) {
 
         const isProperty = !!tile.group;
         const isChance   = tile.type === "surprise";
+        const isTreasure = tile.type === "treasure";
 
         return (
           <div
@@ -92,57 +141,46 @@ export default function Board({ board, ownership, players, pendingAction }) {
             }}
           >
             <div className="tile-content">
-              {/* Thick property color strip — at inner edge (faces board center) */}
               {stripColor && (
                 <div className="tile-strip" style={{ background: stripColor }} />
               )}
 
-              <div className={[
-                "tile-body",
-                isCorner   ? "tile-body-corner"   : "",
-                isProperty ? "tile-body-property" : "",
-              ].filter(Boolean).join(" ")}>
-
-                {isCorner ? (
-                  /* ── Corner tile ── */
-                  <>
-                    <div className="tile-icon-lg">{TYPE_ICON[tile.type]}</div>
-                    <div className="tile-name">{tile.name}</div>
-                  </>
-                ) : isProperty ? (
-                  /* ── Property tile: name top, price bottom ── */
-                  <>
-                    <div className="tile-name">{tile.name}</div>
-                    {"price" in tile && (
-                      <div className="tile-price">${tile.price}</div>
-                    )}
-                  </>
-                ) : isChance ? (
-                  /* ── Chance / Surprise: orange "?" + name ── */
-                  <>
-                    <div className="tile-chance-mark">?</div>
-                    <div className="tile-name">{tile.name}</div>
-                  </>
-                ) : (
-                  /* ── Transit, Utility, Tax, Rest, Jail, etc. ── */
-                  <>
-                    {TYPE_ICON[tile.type] && (
-                      <div className="tile-icon">{TYPE_ICON[tile.type]}</div>
-                    )}
-                    <div className="tile-name">{tile.name}</div>
-                    {"price" in tile && (
-                      <div className="tile-price">
-                        {tile.type === "tax"
-                          ? `Pay $${tile.amount ?? tile.price}`
-                          : `$${tile.price}`}
-                      </div>
-                    )}
-                  </>
-                )}
-              </div>
+              {isCorner ? (
+                <div className="tile-body tile-body-corner">
+                  <CornerContent tile={tile} />
+                </div>
+              ) : isProperty ? (
+                <div className="tile-body tile-body-property">
+                  <div className="tile-name">{tile.name}</div>
+                  {"price" in tile && <div className="tile-price">${tile.price}</div>}
+                </div>
+              ) : isChance ? (
+                <div className="tile-body">
+                  <div className="tile-chance-mark">?</div>
+                  <div className="tile-name">{tile.name}</div>
+                </div>
+              ) : isTreasure ? (
+                <div className="tile-body">
+                  <div className="tile-chest-mark">📬</div>
+                  <div className="tile-name">{tile.name}</div>
+                </div>
+              ) : (
+                <div className="tile-body">
+                  {TYPE_ICON[tile.type] && (
+                    <div className="tile-icon">{TYPE_ICON[tile.type]}</div>
+                  )}
+                  <div className="tile-name">{tile.name}</div>
+                  {"price" in tile && (
+                    <div className="tile-price">
+                      {tile.type === "tax"
+                        ? `Pay $${tile.amount ?? tile.price}`
+                        : `$${tile.price}`}
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
 
-            {/* Ownership badge — fixed to physical tile, never rotates */}
             {owned && (
               <div
                 className={`tile-owner ${owned.mortgaged ? "tile-owner-mortgaged" : ""}`}
@@ -156,25 +194,20 @@ export default function Board({ board, ownership, players, pendingAction }) {
               </div>
             )}
 
-            {/* Player tokens — fixed to physical tile, never rotates */}
             <div className="tile-tokens">
               {occupants.map((p) => (
-                <span
-                  key={p.id}
-                  className="token"
-                  style={{ background: p.color }}
-                  title={p.name}
-                />
+                <span key={p.id} className="token" style={{ background: p.color }} title={p.name} />
               ))}
             </div>
           </div>
         );
       })}
 
-      {/* Board center — sage-green, matches classic Monopoly */}
       <div className="board-center">
-        <div className="board-center-title">Fortune</div>
-        <div className="board-center-title">City</div>
+        <div className="board-center-logo">
+          <span className="board-center-f">Fortune</span>
+          <span className="board-center-c">City</span>
+        </div>
       </div>
     </div>
   );
