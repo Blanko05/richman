@@ -85,26 +85,12 @@ function App() {
 
   return (
     <div className="game-screen">
-      <div className="left-sidebar">
-        <div className="placeholder-block" />
-        <div className="placeholder-block" />
-        <div className="placeholder-block" />
-      </div>
-
-      <div className="board-wrap">
-        <Board
-          board={state.board}
-          ownership={state.ownership}
-          players={state.players}
-          pendingAction={state.pendingAction}
-        />
-      </div>
-
-      <div className="right-sidebar">
-        <div className="placeholder-block" />
-        <div className="placeholder-block" />
-        <div className="placeholder-block" />
-      </div>
+      <Board
+        board={state.board}
+        ownership={state.ownership}
+        players={state.players}
+        pendingAction={state.pendingAction}
+      />
     </div>
   );
 }
