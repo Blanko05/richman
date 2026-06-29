@@ -1,24 +1,24 @@
 :root {
-  /* ── Classic Monopoly palette ── */
-  --bg:       #1c3c1c;          /* dark green outer */
-  --panel:    #c8dcc8;          /* sage/mint green  */
-  --panel-2:  #ffffff;          /* white tiles      */
-  --panel-3:  #eef5ee;          /* light mint       */
-  --border:   #2a5a28;          /* dark green border */
-  --text:     #111111;
-  --text-dim: #555555;
-  --accent:   #cc1212;          /* Monopoly red     */
-  --accent-2: #2a5a28;
+  /* ── Dark luxury palette ── */
+  --bg:       #050810;
+  --panel:    #0d1119;
+  --panel-2:  #111827;
+  --panel-3:  #1e2a3a;
+  --border:   #1e293b;
+  --text:     #f1f5f9;
+  --text-dim: #64748b;
+  --accent:   #818cf8;   /* indigo */
+  --accent-2: #34d399;   /* emerald */
 
-  /* Classic Monopoly property-group colors */
-  --g-copper:   #7b3f00;   /* brown      */
-  --g-teal:     #00aeef;   /* light blue */
-  --g-violet:   #c2185b;   /* pink       */
-  --g-amber:    #f7941d;   /* orange     */
-  --g-crimson:  #ed1b24;   /* red        */
-  --g-azure:    #fef200;   /* yellow     */
-  --g-jade:     #1fb25a;   /* green      */
-  --g-obsidian: #0072bb;   /* dark blue  */
+  /* Vibrant property-group colors */
+  --g-copper:   #c2410c;
+  --g-teal:     #0891b2;
+  --g-violet:   #7c3aed;
+  --g-amber:    #d97706;
+  --g-crimson:  #dc2626;
+  --g-azure:    #2563eb;
+  --g-jade:     #059669;
+  --g-obsidian: #475569;
 
   font: 15px/1.4 system-ui, "Segoe UI", Roboto, sans-serif;
   color: var(--text);
@@ -41,15 +41,15 @@ button {
   border: none;
   border-radius: 8px;
   padding: 9px 16px;
-  background: var(--panel);
+  background: var(--panel-3);
   color: var(--text);
   transition: filter 0.15s;
 }
-button:hover:not(:disabled) { filter: brightness(0.92); }
+button:hover:not(:disabled) { filter: brightness(1.15); }
 button:disabled { opacity: 0.45; cursor: not-allowed; }
 button.primary {
   background: var(--accent);
-  color: #fff;
+  color: #0a0e1a;
   font-weight: 700;
 }
 
@@ -58,7 +58,7 @@ input {
   padding: 8px 10px;
   border-radius: 6px;
   border: 1px solid var(--border);
-  background: var(--panel-2);
+  background: var(--panel);
   color: var(--text);
   width: 100%;
 }

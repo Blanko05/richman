@@ -12,13 +12,26 @@ function isCornerTile(id) {
 const TYPE_ICON = {
   start:         "▶",
   tax:           "💰",
-  surprise:      "?",
+  surprise:      "❓",
   treasure:      "📬",
   transit:       "🚂",
   utility:       "💡",
   rest:          "🅿",
   holding:       "⛓",
   go_to_holding: "👮",
+};
+
+// Glow color for non-group tiles — drives the ::before radial gradient
+const TYPE_GLOW = {
+  start:         "#34d399",
+  tax:           "#f59e0b",
+  surprise:      "#a78bfa",
+  treasure:      "#38bdf8",
+  transit:       "#94a3b8",
+  utility:       "#fbbf24",
+  rest:          "#4ade80",
+  holding:       "#6b7280",
+  go_to_holding: "#f87171",
 };
 
 function seededRand(seed) {
@@ -30,10 +43,10 @@ const rand = seededRand(42);
 let _t = 0;
 const TILE_DELAYS = Array.from({ length: 32 }, () => {
   const isGap = rand() < 0.3;
-  _t += isGap ? 0.10 + rand() * 0.08 : 0.03 + rand() * 0.04;
+  _t += isGap ? 0.12 + rand() * 0.10 : 0.03 + rand() * 0.05;
   return _t;
 });
-const TILE_DURS = Array.from({ length: 32 }, () => 0.45 + rand() * 0.15);
+const TILE_DURS = Array.from({ length: 32 }, () => 0.55 + rand() * 0.20);
 
 export default function Board({ board, ownership, players, pendingAction }) {
   return (
@@ -46,10 +59,15 @@ export default function Board({ board, ownership, players, pendingAction }) {
         const occupants  = players.filter((p) => p.position === tile.id && !p.bankrupt);
         const isPending  = pendingAction?.tileId === tile.id;
 
-        // Strip only for property tiles (has a group color)
+        // --g drives the ::before radial glow in CSS (inherited custom property)
+        const glowColor  = tile.group
+          ? `var(--g-${tile.group})`
+          : (TYPE_GLOW[tile.type] ?? "transparent");
+
+        // Strip only for property tiles
         const stripColor = tile.group ? `var(--g-${tile.group})` : null;
 
-        // Rotation: side columns face inward; top row is upside-down (classic Monopoly)
+        // Content rotation: left CW, right CCW, top 180°
         const isLeftCol  = !isCorner && pos.col === 1;
         const isRightCol = !isCorner && pos.col === 9;
         const isTopRow   = !isCorner && pos.row === 1;
@@ -70,6 +88,7 @@ export default function Board({ board, ownership, players, pendingAction }) {
               rotateClass,
             ].filter(Boolean).join(" ")}
             style={{
+              "--g":             glowColor,
               gridRow:           pos.row,
               gridColumn:        pos.col,
               animationDelay:    `${TILE_DELAYS[tile.id]}s`,
@@ -77,9 +96,12 @@ export default function Board({ board, ownership, players, pendingAction }) {
             }}
           >
             <div className="tile-content">
-              {/* Thick colored strip — only for properties, always at the inner edge */}
+              {/* Thin glowing colored strip for property tiles */}
               {stripColor && (
-                <div className="tile-strip" style={{ background: stripColor }} />
+                <div
+                  className="tile-strip"
+                  style={{ background: stripColor, color: stripColor }}
+                />
               )}
 
               <div className={`tile-body ${isCorner ? "tile-body-corner" : ""}`}>
@@ -90,9 +112,13 @@ export default function Board({ board, ownership, players, pendingAction }) {
                   </>
                 ) : (
                   <>
-                    {/* Non-property tiles show a large icon */}
                     {tile.type !== "property" && TYPE_ICON[tile.type] && (
-                      <div className="tile-icon">{TYPE_ICON[tile.type]}</div>
+                      <div
+                        className="tile-icon"
+                        style={{ filter: `drop-shadow(0 0 6px ${TYPE_GLOW[tile.type] ?? "transparent"})` }}
+                      >
+                        {TYPE_ICON[tile.type]}
+                      </div>
                     )}
                     <div className="tile-name">{tile.name}</div>
                     {"price" in tile && (
@@ -107,7 +133,7 @@ export default function Board({ board, ownership, players, pendingAction }) {
               </div>
             </div>
 
-            {/* Ownership badge — pinned to physical tile, not rotated */}
+            {/* Ownership badge — not rotated, always physical top-right */}
             {owned && (
               <div
                 className={`tile-owner ${owned.mortgaged ? "tile-owner-mortgaged" : ""}`}
@@ -121,10 +147,15 @@ export default function Board({ board, ownership, players, pendingAction }) {
               </div>
             )}
 
-            {/* Player tokens — pinned to physical tile, not rotated */}
+            {/* Player tokens — not rotated, always physical bottom-left */}
             <div className="tile-tokens">
               {occupants.map((p) => (
-                <span key={p.id} className="token" style={{ background: p.color }} title={p.name} />
+                <span
+                  key={p.id}
+                  className="token"
+                  style={{ background: p.color, color: p.color }}
+                  title={p.name}
+                />
               ))}
             </div>
           </div>

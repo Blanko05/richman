@@ -85,8 +85,12 @@ function App() {
 
   return (
     <div className="game-screen">
-      <Board board={state.board} ownership={state.ownership} players={state.players} pendingAction={state.pendingAction} />
-      <Hud state={state} myId={myId} onLeave={handleLeave} />
+      <Board
+        board={state.board}
+        ownership={state.ownership}
+        players={state.players}
+        pendingAction={state.pendingAction}
+      />
     </div>
   );
 }
