@@ -1,26 +1,26 @@
 :root {
-  /* ── Classic Monopoly palette ── */
-  --bg:       #1a3a1a;   /* dark green surround */
-  --panel:    #c5dbc5;   /* sage-green board center */
-  --panel-2:  #ffffff;
-  --panel-3:  #f5faf5;
-  --border:   #000000;
-  --text:     #000000;
-  --text-dim: #444444;
-  --accent:   #ed1c24;   /* Monopoly red */
-  --accent-2: #1fb25a;
+  /* ── RichUp dark theme ── */
+  --bg:       #080b14;   /* near-black outer surround */
+  --panel:    #0d1020;   /* dark board center */
+  --panel-2:  #1a1d2e;   /* tile surface */
+  --panel-3:  #232640;
+  --border:   #2a2d40;
+  --text:     #eceef8;
+  --text-dim: #7a80a0;
+  --accent:   #5c6bc0;
+  --accent-2: #26a69a;
 
-  /* ── Exact classic Monopoly property-group colors ── */
-  --g-copper:   #955436;   /* Brown           */
-  --g-teal:     #87ceeb;   /* Light Blue      */
-  --g-violet:   #d93a96;   /* Pink / Magenta  */
-  --g-amber:    #f7941d;   /* Orange          */
-  --g-crimson:  #ed1c24;   /* Red             */
-  --g-azure:    #fef200;   /* Yellow          */
-  --g-jade:     #1fb25a;   /* Green           */
-  --g-obsidian: #0072bb;   /* Dark Blue       */
+  /* ── Vivid RichUp-style property group colors ── */
+  --g-copper:   #a0522d;   /* Brown      */
+  --g-teal:     #29b6e8;   /* Light Blue */
+  --g-violet:   #e91e8c;   /* Pink       */
+  --g-amber:    #ff6d00;   /* Orange     */
+  --g-crimson:  #f44336;   /* Red        */
+  --g-azure:    #fdd835;   /* Yellow     */
+  --g-jade:     #43a047;   /* Green      */
+  --g-obsidian: #1e88e5;   /* Dark Blue  */
 
-  font: 14px/1.4 Arial, "Helvetica Neue", sans-serif;
+  font: 14px/1.4 "Inter", Arial, "Helvetica Neue", sans-serif;
   color: var(--text);
   background: var(--bg);
 }

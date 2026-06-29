@@ -9,12 +9,12 @@
   text-align: center;
   background: var(--bg);
 }
-.lobby h1  { font-size: 42px; color: var(--accent); font-weight: 900; }
+.lobby h1  { font-size: 42px; color: #eceef8; font-weight: 800; letter-spacing: 0.04em; }
 .tagline   { color: var(--text-dim); margin-bottom: 24px; }
 .lobby-card {
-  background: #fff;
-  border: 2px solid #000;
-  border-radius: 8px;
+  background: #1a1d2e;
+  border: 1px solid #2a2d40;
+  border-radius: 12px;
   padding: 24px;
   width: 320px;
   display: flex;
@@ -24,7 +24,7 @@
 }
 .lobby-card label { display: flex; flex-direction: column; gap: 6px; font-size: 13px; color: var(--text-dim); }
 .divider { text-align: center; color: var(--text-dim); font-size: 13px; margin: 4px 0; }
-.error   { color: #ed1c24; font-size: 13px; }
+.error   { color: #f44336; font-size: 13px; }
 
 /* ─── Game screen ────────────────────────────────────── */
 .game-screen {
@@ -38,20 +38,17 @@
 
 /* ─── Board ──────────────────────────────────────────── */
 .board {
-  /*
-   * Square board — min of viewport dims so it always fits.
-   * 5fr corners : 3fr regular ≈ 2.5" : 1.5" (exact Monopoly ratio).
-   * background: #000 shows as 1 px black grid lines through the gap.
-   */
   width:  min(100vw, 100vh);
   height: min(100vw, 100vh);
   display: grid;
   grid-template-columns: 5fr repeat(7, 3fr) 5fr;
   grid-template-rows:    5fr repeat(7, 3fr) 5fr;
-  background: #000;
-  gap: 1px;
-  border: 3px solid #000;
-  box-shadow: 0 8px 40px rgba(0,0,0,0.6);
+  /* near-black gap = the "void" RichUp shows between tiles */
+  background: #05060e;
+  gap: 2px;
+  border: 2px solid #14172a;
+  border-radius: 4px;
+  box-shadow: 0 0 60px rgba(0,0,0,0.8), 0 0 120px rgba(0,0,0,0.5);
 }
 
 /* ─── Tile drop animation ────────────────────────────── */
@@ -71,13 +68,15 @@
 .tile {
   position: relative;
   container-type: size;
-  background: #fff;
+  background: #1a1d2e;
   overflow: hidden;
   cursor: default;
+  transition: filter 0.12s;
 }
-.tile-corner { background: #fff; }
+.tile:hover { filter: brightness(1.12); }
+.tile-corner { background: #1a1d2e; }
 .tile-pending {
-  outline: 2px solid var(--accent);
+  outline: 2px solid #5c6bc0;
   outline-offset: -2px;
   z-index: 1;
 }
@@ -90,7 +89,6 @@
   flex-direction: column;
 }
 
-/* Left col → 90° CW (strip faces right = board center) */
 .tile-rotate-cw .tile-content {
   inset: unset;
   width: 100cqh; height: 100cqw;
@@ -98,7 +96,6 @@
   transform: translate(-50%, -50%) rotate(90deg);
 }
 
-/* Right col → 90° CCW (strip faces left = board center) */
 .tile-rotate-ccw .tile-content {
   inset: unset;
   width: 100cqh; height: 100cqw;
@@ -106,14 +103,9 @@
   transform: translate(-50%, -50%) rotate(-90deg);
 }
 
-/* Top row → 180° (strip faces down = board center) */
 .tile-rotate-180 .tile-content { transform: rotate(180deg); }
 
 /* ─── Property color strip ───────────────────────────── */
-/*
- * Real Monopoly strip is ~17 mm of the 62 mm visible tile depth ≈ 27%.
- * We use 28% for a clean visual match.
- */
 .tile-strip {
   flex: 0 0 28%;
   width: 100%;
@@ -131,14 +123,12 @@
   text-align: center;
 }
 
-/* Property: name centred, price at bottom */
 .tile-body-property {
   justify-content: space-between;
   padding-top:    clamp(3px, 4cqmin, 8px);
   padding-bottom: clamp(2px, 3cqmin, 6px);
 }
 
-/* Corner: content centred */
 .tile-body-corner {
   position: absolute;
   inset: 0;
@@ -152,10 +142,9 @@
 .tile-name {
   font-size: clamp(5.5px, 8.5cqmin, 10px);
   font-weight: 700;
-  font-family: Arial Narrow, Arial, "Helvetica Neue", sans-serif;
-  color: #000;
+  color: #eceef8;
   text-transform: uppercase;
-  letter-spacing: 0.02em;
+  letter-spacing: 0.04em;
   line-height: 1.15;
 }
 
@@ -164,27 +153,24 @@
 
 .tile-price {
   font-size: clamp(5px, 7.5cqmin, 9px);
-  font-weight: 700;
-  font-family: Arial Narrow, Arial, sans-serif;
-  color: #000;
-  letter-spacing: 0.02em;
+  font-weight: 600;
+  color: #7a80a0;
+  letter-spacing: 0.04em;
 }
 
-/* ─── Chance "?" — Monopoly orange ──────────────────── */
+/* ─── Chance mark ────────────────────────────────────── */
 .tile-chance-mark {
   font-size: clamp(16px, 26cqmin, 40px);
   font-weight: 900;
-  color: #f7941d;
+  color: #ff6d00;
   line-height: 1;
   font-style: italic;
 }
 
-/* ─── Community Chest (treasure) mark ───────────────── */
+/* ─── Community Chest mark ───────────────────────────── */
 .tile-chest-mark {
   font-size: clamp(13px, 20cqmin, 30px);
   line-height: 1;
-  /* classic Monopoly community-chest blue */
-  filter: drop-shadow(0 0 1px #0072bb);
 }
 
 /* ─── Corner: GO ─────────────────────────────────────── */
@@ -200,11 +186,10 @@
 
 .corner-collect {
   font-size: clamp(4px, 6cqmin, 9px);
-  font-weight: 700;
-  font-family: Arial Narrow, Arial, sans-serif;
-  color: #000;
+  font-weight: 600;
+  color: #7a80a0;
   text-transform: uppercase;
-  letter-spacing: 0.02em;
+  letter-spacing: 0.04em;
   line-height: 1.2;
   text-align: center;
 }
@@ -212,17 +197,16 @@
 .corner-arrow {
   font-size: clamp(22px, 34cqmin, 52px);
   font-weight: 900;
-  color: #ed1c24;   /* Monopoly red */
+  color: #43a047;
   line-height: 1;
 }
 
 .corner-go-label {
   font-size: clamp(14px, 22cqmin, 34px);
   font-weight: 900;
-  font-family: Arial Black, Arial, sans-serif;
-  color: #ed1c24;
+  color: #43a047;
   text-transform: uppercase;
-  letter-spacing: 0.05em;
+  letter-spacing: 0.08em;
   line-height: 1;
 }
 
@@ -235,16 +219,16 @@
   align-items: center;
   justify-content: center;
   gap: clamp(2px, 3cqmin, 6px);
-  border: clamp(1px, 1.5cqmin, 3px) solid var(--g-crimson);
+  border: clamp(1px, 1.5cqmin, 3px) solid #f44336;
   box-sizing: border-box;
 }
 
 .corner-jail-visiting {
   font-size: clamp(4.5px, 7cqmin, 10px);
   font-weight: 700;
-  color: #000;
+  color: #eceef8;
   text-transform: uppercase;
-  letter-spacing: 0.03em;
+  letter-spacing: 0.04em;
   line-height: 1.15;
   text-align: center;
 }
@@ -258,16 +242,16 @@
 
 .jail-bar {
   width: clamp(1.5px, 2cqmin, 4px);
-  background: #333;
+  background: #7a80a0;
   border-radius: 1px;
 }
 
 .corner-jail-label {
   font-size: clamp(4.5px, 7cqmin, 10px);
   font-weight: 700;
-  color: var(--g-crimson);
+  color: #f44336;
   text-transform: uppercase;
-  letter-spacing: 0.03em;
+  letter-spacing: 0.04em;
 }
 
 /* ─── Corner: Free Parking ───────────────────────────── */
@@ -289,18 +273,17 @@
 .corner-parking-label {
   font-size: clamp(8px, 13cqmin, 20px);
   font-weight: 900;
-  font-family: Arial Black, Arial, sans-serif;
-  color: #ed1c24;
+  color: #fdd835;
   text-transform: uppercase;
-  letter-spacing: 0.04em;
+  letter-spacing: 0.06em;
 }
 
 .corner-parking-sub {
   font-size: clamp(4.5px, 7cqmin, 10px);
-  font-weight: 700;
-  color: #000;
+  font-weight: 600;
+  color: #7a80a0;
   text-transform: uppercase;
-  letter-spacing: 0.03em;
+  letter-spacing: 0.04em;
 }
 
 /* ─── Corner: Go To Jail ─────────────────────────────── */
@@ -321,20 +304,18 @@
 
 .corner-gtj-label {
   font-size: clamp(5.5px, 8.5cqmin, 13px);
-  font-weight: 900;
-  font-family: Arial Black, Arial, sans-serif;
-  color: #000;
+  font-weight: 700;
+  color: #7a80a0;
   text-transform: uppercase;
-  letter-spacing: 0.04em;
+  letter-spacing: 0.06em;
 }
 
 .corner-gtj-jail {
   font-size: clamp(7px, 11cqmin, 17px);
   font-weight: 900;
-  font-family: Arial Black, Arial, sans-serif;
-  color: #ed1c24;
+  color: #f44336;
   text-transform: uppercase;
-  letter-spacing: 0.04em;
+  letter-spacing: 0.06em;
 }
 
 /* ─── Ownership badge ────────────────────────────────── */
@@ -342,14 +323,14 @@
   position: absolute;
   top: 2px; right: 2px;
   width: 13px; height: 13px;
-  border-radius: 2px;
-  border: 1px solid rgba(0,0,0,0.35);
+  border-radius: 3px;
+  border: 1px solid rgba(255,255,255,0.15);
   display: flex; align-items: center; justify-content: center;
   font-size: 8px; font-weight: 700;
   color: #fff;
   z-index: 2;
 }
-.tile-owner-mortgaged { opacity: 0.65; }
+.tile-owner-mortgaged { opacity: 0.5; }
 
 /* ─── Player tokens ──────────────────────────────────── */
 .tile-tokens {
@@ -361,14 +342,14 @@
 .token {
   width: 10px; height: 10px;
   border-radius: 50%;
-  border: 1.5px solid rgba(0,0,0,0.25);
+  border: 1.5px solid rgba(255,255,255,0.2);
 }
 
 /* ─── Board center ───────────────────────────────────── */
 .board-center {
   grid-row:    2 / 9;
   grid-column: 2 / 9;
-  background: #c5dbc5;   /* classic Monopoly sage-green */
+  background: #0d1020;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -379,63 +360,69 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 0;
+  gap: clamp(2px, 0.4vw, 6px);
 }
 
-.board-center-f,
+.board-center-f {
+  display: block;
+  font-family: "Inter", "Arial Black", Arial, sans-serif;
+  font-size: clamp(16px, 3.4vw, 56px);
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.28em;
+  line-height: 1.0;
+  color: #eceef8;
+  opacity: 0.9;
+}
+
 .board-center-c {
   display: block;
-  font-family: "Arial Black", Impact, "Haettenschweiler", sans-serif;
-  font-size: clamp(16px, 3.2vw, 52px);
-  font-weight: 900;
+  font-family: "Inter", "Arial Black", Arial, sans-serif;
+  font-size: clamp(14px, 2.8vw, 46px);
+  font-weight: 700;
   text-transform: uppercase;
-  letter-spacing: 0.22em;
+  letter-spacing: 0.32em;
   line-height: 1.0;
-  /* Classic Monopoly: title in dark red with thick black shadow */
-  color: #ed1c24;
-  -webkit-text-stroke: clamp(0.5px, 0.09vw, 1.5px) #000;
-  text-shadow:
-    clamp(1px, 0.18vw, 3px) clamp(1px, 0.18vw, 3px) 0 #000,
-    clamp(-1px, -0.09vw, -2px) clamp(1px, 0.18vw, 3px) 0 #000;
-  opacity: 0.82;
+  color: #5c6bc0;
+  opacity: 0.9;
 }
 
 /* ─── HUD ────────────────────────────────────────────── */
 .hud { display: none; }
-.hud-section { background: #fff; border: 1px solid #000; border-radius: 8px; padding: 14px; }
+.hud-section { background: #1a1d2e; border: 1px solid #2a2d40; border-radius: 10px; padding: 14px; }
 .room-header { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
-.leave-btn   { font-size: 12px; padding: 5px 10px; background: #f0f0f0; color: #333; }
-.badge-warn  { background: #ffe0e0; color: #cc0000; }
+.leave-btn   { font-size: 12px; padding: 5px 10px; background: #232640; color: #7a80a0; }
+.badge-warn  { background: #2a1515; color: #f44336; }
 .turn-countdown        { font-size: 13px; color: var(--text-dim); margin: 4px 0; }
-.turn-countdown-urgent { color: #cc0000; font-weight: 600; }
+.turn-countdown-urgent { color: #f44336; font-weight: 600; }
 .hint        { color: var(--text-dim); font-size: 13px; }
 .dice-display { font-size: 20px; margin: 8px 0; }
-.card-display { background: #f8f8f8; border-radius: 6px; padding: 8px; font-size: 13px; }
+.card-display { background: #232640; border-radius: 6px; padding: 8px; font-size: 13px; color: #eceef8; }
 .action-row  { display: flex; gap: 8px; flex-wrap: wrap; }
-.buy-prompt  { background: #f8f8f8; border-radius: 6px; padding: 10px; margin-top: 8px; }
+.buy-prompt  { background: #232640; border-radius: 6px; padding: 10px; margin-top: 8px; }
 .build-panel { margin-top: 10px; }
 .trade-list  { display: flex; flex-direction: column; gap: 10px; margin-bottom: 10px; }
-.trade-card  { background: #f8f8f8; border-radius: 6px; padding: 10px; }
+.trade-card  { background: #232640; border-radius: 6px; padding: 10px; }
 .trade-summary p { margin: 2px 0; }
 .trade-side  { font-size: 13px; color: var(--text-dim); }
 .trade-field { display: flex; flex-direction: column; gap: 4px; font-size: 13px; color: var(--text-dim); margin: 8px 0; }
 .trade-columns { display: flex; gap: 16px; margin: 8px 0; }
 .trade-columns > div { flex: 1; }
-.trade-col-title { font-size: 13px; font-weight: 600; margin: 0 0 4px; }
+.trade-col-title { font-size: 13px; font-weight: 600; margin: 0 0 4px; color: #eceef8; }
 .trade-checkbox { display: flex; align-items: center; gap: 6px; font-size: 13px; margin: 4px 0; }
 .trade-checkbox input { width: auto; }
 .build-btn   { display: block; width: 100%; text-align: left; margin-top: 6px; }
 .build-row   { align-items: center; margin-top: 6px; flex-wrap: nowrap; }
 .build-row-name { flex: 1; font-size: 13px; min-width: 0; }
 .build-row .build-btn { width: auto; margin-top: 0; flex-shrink: 0; }
-.winner-banner { text-align: center; background: linear-gradient(135deg, var(--accent), #ffd700); color: #fff; }
+.winner-banner { text-align: center; background: #232640; color: #eceef8; border-radius: 8px; padding: 12px; }
 .player-list { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 8px; }
-.player-list li { display: flex; align-items: center; gap: 8px; font-size: 13px; }
-.player-list li.bankrupt { opacity: 0.4; text-decoration: line-through; }
+.player-list li { display: flex; align-items: center; gap: 8px; font-size: 13px; color: #eceef8; }
+.player-list li.bankrupt { opacity: 0.3; text-decoration: line-through; }
 .swatch    { width: 11px; height: 11px; border-radius: 50%; flex-shrink: 0; }
 .p-name    { flex: 1; }
 .p-balance { font-weight: 600; }
-.badge { font-size: 10px; background: #f0f0f0; border-radius: 4px; padding: 2px 5px; color: var(--text-dim); }
+.badge { font-size: 10px; background: #232640; border-radius: 4px; padding: 2px 5px; color: var(--text-dim); }
 .log   { max-height: 200px; overflow-y: auto; }
 .log ul {
   list-style: none; padding: 0; margin: 0;
