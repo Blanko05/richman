@@ -1,6 +1,7 @@
 import { nanoid } from "nanoid";
-import { BOARD, TILE_TYPES, TOTAL_TILES, propertiesByGroup } from "./board.js";
-import { SURPRISE_CARDS, TREASURE_CARDS, shuffledDeck } from "./cards.js";
+import { TILE_TYPES } from "./board.js";
+import { shuffledDeck } from "./cards.js";
+import { resolveMap, DEFAULT_MAP_ID } from "./maps/index.js";
 
 // Exported so the test suite can assert against these by name instead of
 // hardcoding magic numbers that would silently drift out of sync if tuned here.
@@ -21,15 +22,21 @@ function article(n) {
 }
 
 export class Room {
-  constructor(code, hostId) {
+  constructor(code, hostId, mapId = DEFAULT_MAP_ID) {
     this.code = code;
     this.hostId = hostId;
+    const map = resolveMap(mapId);
+    this.mapId = map.id;
+    this.board = map.board;
+    this.totalTiles = map.board.length;
+    this.surpriseCards = map.surpriseCards;
+    this.treasureCards = map.treasureCards;
     this.players = []; // {id, token, name, color, connected, balance, position, inHolding, holdingTurns, holdingFreeCard, bankrupt, left, properties: [tileId]}
     this.ownership = {}; // tileId -> { ownerId, houses }
     this.started = false;
     this.turnIndex = 0;
-    this.surpriseDeck = shuffledDeck(SURPRISE_CARDS);
-    this.treasureDeck = shuffledDeck(TREASURE_CARDS);
+    this.surpriseDeck = shuffledDeck(this.surpriseCards);
+    this.treasureDeck = shuffledDeck(this.treasureCards);
     this.log = [];
     this.lastRoll = null;
     this.pendingAction = null; // { type: 'awaitBuy'|'awaitRent'..., tileId }
@@ -266,8 +273,8 @@ export class Room {
 
   movePlayer(player, steps) {
     const prev = player.position;
-    let next = (prev + steps) % TOTAL_TILES;
-    if (next < 0) next += TOTAL_TILES;
+    let next = (prev + steps) % this.totalTiles;
+    if (next < 0) next += this.totalTiles;
     if (steps > 0 && next < prev) {
       player.balance += 200;
       this.pushLog(`${player.name} passed Start Plaza and collected 200 coins.`);
@@ -277,7 +284,7 @@ export class Room {
   }
 
   resolveTile(player) {
-    const tile = BOARD[player.position];
+    const tile = this.board[player.position];
     switch (tile.type) {
       case TILE_TYPES.START:
         break;
@@ -325,7 +332,7 @@ export class Room {
   calcRent(tile, owned) {
     if (tile.type === TILE_TYPES.PROPERTY) {
       const houses = owned.houses || 0;
-      const groupTiles = propertiesByGroup(tile.group);
+      const groupTiles = this.this.propertiesByGroup(tile.group);
       const ownsAll = groupTiles.every((t) => this.ownership[t.id]?.ownerId === owned.ownerId);
       let rent = tile.rent[houses];
       if (houses === 0 && ownsAll) rent *= 2;
@@ -333,12 +340,12 @@ export class Room {
     }
     if (tile.type === TILE_TYPES.TRANSIT) {
       const owner = owned.ownerId;
-      const count = BOARD.filter((t) => t.type === TILE_TYPES.TRANSIT && this.ownership[t.id]?.ownerId === owner).length;
+      const count = this.board.filter((t) => t.type === TILE_TYPES.TRANSIT && this.ownership[t.id]?.ownerId === owner).length;
       return tile.rent[Math.min(count - 1, tile.rent.length - 1)];
     }
     if (tile.type === TILE_TYPES.UTILITY) {
       const owner = owned.ownerId;
-      const count = BOARD.filter((t) => t.type === TILE_TYPES.UTILITY && this.ownership[t.id]?.ownerId === owner).length;
+      const count = this.board.filter((t) => t.type === TILE_TYPES.UTILITY && this.ownership[t.id]?.ownerId === owner).length;
       const mult = tile.multiplier[Math.min(count - 1, tile.multiplier.length - 1)];
       const roll = (this.lastRoll?.[0] || 0) + (this.lastRoll?.[1] || 0);
       return mult * roll;
@@ -349,7 +356,7 @@ export class Room {
   drawCard(player, deckName) {
     const deckKey = deckName === "surprise" ? "surpriseDeck" : "treasureDeck";
     if (this[deckKey].length === 0) {
-      this[deckKey] = shuffledDeck(deckName === "surprise" ? SURPRISE_CARDS : TREASURE_CARDS);
+      this[deckKey] = shuffledDeck(deckName === "surprise" ? this.surpriseCards : this.treasureCards);
     }
     const card = this[deckKey].shift();
     this.pushLog(`${player.name} drew: "${card.text}"`);
@@ -476,7 +483,7 @@ export class Room {
       return { error: "No property to buy" };
     }
     const player = this.playerById(playerId);
-    const tile = BOARD[this.pendingAction.tileId];
+    const tile = this.board[this.pendingAction.tileId];
     if (player.balance < tile.price) return { error: "Not enough coins" };
     player.balance -= tile.price;
     player.properties.push(tile.id);
@@ -491,7 +498,7 @@ export class Room {
       return { error: "No property to decline" };
     }
     const tileId = this.pendingAction.tileId;
-    this.pushLog(`${this.playerById(playerId).name} declined to buy ${BOARD[tileId].name}.`);
+    this.pushLog(`${this.playerById(playerId).name} declined to buy ${this.board[tileId].name}.`);
     this.pendingAction = null;
     this.startAuction(tileId);
     return { ok: true };
@@ -513,7 +520,7 @@ export class Room {
     };
     this.auctions.push(auction);
     this.pendingAction = { type: "auction", tileId, auctionId: auction.id, playerId: this.currentPlayer()?.id };
-    this.pushLog(`${BOARD[tileId].name} is up for auction!`);
+    this.pushLog(`${this.board[tileId].name} is up for auction!`);
     this.scheduleAuctionTimer(auction.id);
   }
 
@@ -548,7 +555,7 @@ export class Room {
     auction.highestBidderId = playerId;
     auction.deadline = Math.max(auction.deadline, Date.now() + AUCTION_EXTEND_MS);
     this.scheduleAuctionTimer(auction.id);
-    this.pushLog(`${player.name} bid ${amount} coins on ${BOARD[auction.tileId].name}.`);
+    this.pushLog(`${player.name} bid ${amount} coins on ${this.board[auction.tileId].name}.`);
     this.maybeResolveAuction(auction.id);
     return { ok: true };
   }
@@ -558,7 +565,7 @@ export class Room {
     if (!auction) return { error: "Auction not found" };
     if (!auction.passedIds.includes(playerId)) {
       auction.passedIds.push(playerId);
-      this.pushLog(`${this.playerById(playerId)?.name ?? "A player"} passed on ${BOARD[auction.tileId].name}.`);
+      this.pushLog(`${this.playerById(playerId)?.name ?? "A player"} passed on ${this.board[auction.tileId].name}.`);
       this.maybeResolveAuction(auction.id);
     }
     return { ok: true };
@@ -582,7 +589,7 @@ export class Room {
     if (!auction) return;
     if (auction.timer) clearTimeout(auction.timer);
     this.auctions = this.auctions.filter((a) => a.id !== auctionId);
-    const tile = BOARD[auction.tileId];
+    const tile = this.board[auction.tileId];
     if (auction.highestBidderId) {
       const winner = this.playerById(auction.highestBidderId);
       winner.balance -= auction.highestBid;
@@ -609,7 +616,7 @@ export class Room {
       if (auction.highestBidderId === playerId) {
         auction.highestBidderId = null;
         auction.highestBid = 0;
-        this.pushLog(`A voided bid reopened the auction for ${BOARD[auction.tileId].name}.`);
+        this.pushLog(`A voided bid reopened the auction for ${this.board[auction.tileId].name}.`);
       }
       if (!auction.passedIds.includes(playerId)) auction.passedIds.push(playerId);
       this.maybeResolveAuction(auction.id);
@@ -617,13 +624,13 @@ export class Room {
   }
 
   buyHouse(playerId, tileId) {
-    const tile = BOARD[tileId];
+    const tile = this.board[tileId];
     const owned = this.ownership[tileId];
     if (!owned || owned.ownerId !== playerId || tile.type !== TILE_TYPES.PROPERTY) {
       return { error: "You do not own this property" };
     }
     if (owned.mortgaged) return { error: "You can't build on a mortgaged property" };
-    const groupTiles = propertiesByGroup(tile.group);
+    const groupTiles = this.propertiesByGroup(tile.group);
     const ownsAll = groupTiles.every((t) => this.ownership[t.id]?.ownerId === playerId);
     if (!ownsAll) return { error: "You must own the full color group" };
     if (owned.houses >= 5) return { error: "Already at max (hotel)" };
@@ -636,7 +643,7 @@ export class Room {
   }
 
   sellHouse(playerId, tileId) {
-    const tile = BOARD[tileId];
+    const tile = this.board[tileId];
     const owned = this.ownership[tileId];
     if (!owned || owned.ownerId !== playerId || tile.type !== TILE_TYPES.PROPERTY) {
       return { error: "You do not own this property" };
@@ -651,7 +658,7 @@ export class Room {
   }
 
   mortgageProperty(playerId, tileId) {
-    const tile = BOARD[tileId];
+    const tile = this.board[tileId];
     const owned = this.ownership[tileId];
     if (!owned || owned.ownerId !== playerId || !tile?.price) {
       return { error: "You do not own this property" };
@@ -667,7 +674,7 @@ export class Room {
   }
 
   unmortgageProperty(playerId, tileId) {
-    const tile = BOARD[tileId];
+    const tile = this.board[tileId];
     const owned = this.ownership[tileId];
     if (!owned || owned.ownerId !== playerId || !owned.mortgaged) {
       return { error: "This property isn't mortgaged" };
@@ -682,7 +689,7 @@ export class Room {
   }
 
   unmortgageCost(tileId) {
-    const tile = BOARD[tileId];
+    const tile = this.board[tileId];
     const value = Math.floor(tile.price / 2);
     return value + Math.ceil(value * MORTGAGE_INTEREST_RATE);
   }
@@ -699,7 +706,7 @@ export class Room {
   // require selling houses, and often paying off the mortgage, before trading).
   isTradeable(tileId, ownerId) {
     const owned = this.ownership[tileId];
-    const tile = BOARD[tileId];
+    const tile = this.board[tileId];
     if (!owned || owned.ownerId !== ownerId || !tile) return false;
     if (tile.type !== TILE_TYPES.PROPERTY && tile.type !== TILE_TYPES.TRANSIT && tile.type !== TILE_TYPES.UTILITY) return false;
     return !owned.houses && !owned.mortgaged;
@@ -882,6 +889,10 @@ export class Room {
     return this.players.find((p) => p.id === id);
   }
 
+  propertiesByGroup(group) {
+    return this.board.filter((t) => t.type === TILE_TYPES.PROPERTY && t.group === group);
+  }
+
   toState() {
     return {
       code: this.code,
@@ -899,7 +910,8 @@ export class Room {
       trades: this.trades,
       auctions: this.auctions.map(({ timer, ...pub }) => pub),
       canRollAgain: this.canRollAgain,
-      board: BOARD,
+      board: this.board,
+      mapId: this.mapId,
     };
   }
 
@@ -925,6 +937,7 @@ export class Room {
       auctions: this.auctions.map(({ timer, ...rest }) => rest),
       canRollAgain: this.canRollAgain,
       consecutiveDoubles: this.consecutiveDoubles,
+      mapId: this.mapId,
     };
   }
 
@@ -937,7 +950,7 @@ export class Room {
   //  - The current player's turn timer is re-armed for a fresh full duration
   //    rather than trying to preserve exactly how much time was left.
   static fromSnapshot(snapshot) {
-    const room = new Room(snapshot.code, snapshot.hostId);
+    const room = new Room(snapshot.code, snapshot.hostId, snapshot.mapId);
     room.started = snapshot.started;
     room.turnIndex = snapshot.turnIndex;
     room.players = snapshot.players.map((p) => ({ ...p, graceTimer: null }));

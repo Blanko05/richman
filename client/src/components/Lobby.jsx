@@ -1,16 +1,18 @@
 import { useState } from "react";
 import { socket } from "../socket";
+import MapSelector from "./MapSelector";
 
 export default function Lobby({ onJoined }) {
   const [name, setName] = useState("");
   const [code, setCode] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [mapId, setMapId] = useState("default");
 
   function createRoom() {
     if (!name.trim()) return setError("Enter a name first");
     setBusy(true);
-    socket.emit("createRoom", { name: name.trim() }, (res) => {
+    socket.emit("createRoom", { name: name.trim(), mapId }, (res) => {
       setBusy(false);
       if (res?.error) return setError(res.error);
       onJoined(res);
@@ -37,6 +39,11 @@ export default function Lobby({ onJoined }) {
         <label>
           Your name
           <input value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Alex" maxLength={16} />
+        </label>
+
+        <label>
+          Map
+          <MapSelector value={mapId} onChange={setMapId} />
         </label>
 
         <button className="primary" disabled={busy} onClick={createRoom}>

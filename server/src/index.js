@@ -72,11 +72,11 @@ function bindSocket(socket, roomCode, playerId) {
 }
 
 io.on("connection", (socket) => {
-  socket.on("createRoom", ({ name }, cb) => {
+  socket.on("createRoom", ({ name, mapId }, cb) => {
     const playerId = nanoid();
     const token = nanoid();
     const code = generateRoomCode();
-    const room = new Room(code, playerId);
+    const room = new Room(code, playerId, mapId);
     room.notify = () => broadcastState(code);
     room.addPlayer(playerId, name || "Player", token);
     rooms.set(code, room);
