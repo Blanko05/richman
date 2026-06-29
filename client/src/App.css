@@ -77,10 +77,10 @@
   height: min(100cqw, 100cqh);
   flex-shrink: 0;
   display: grid;
-  /* Corners get 2× the track size so they're bigger squares;
-     edges are 1fr giving portrait left/right and landscape top/bottom */
-  grid-template-columns: 2fr repeat(7, 1fr) 2fr;
-  grid-template-rows:    2fr repeat(7, 1fr) 2fr;
+  /* Corners are 1.6× edge tiles (smaller squares than before);
+     edge tiles are 1.2fr to make them a bit wider */
+  grid-template-columns: 1.6fr repeat(7, 1.2fr) 1.6fr;
+  grid-template-rows:    1.6fr repeat(7, 1.2fr) 1.6fr;
   background: var(--panel);
   border: 1px solid var(--border);
   border-radius: 12px;
