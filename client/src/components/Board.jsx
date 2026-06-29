@@ -21,7 +21,6 @@ const TYPE_ICON = {
   go_to_holding: "👮",
 };
 
-// Glow color for non-group tiles
 const TYPE_GLOW = {
   surprise:      "#ec4899",
   treasure:      "#f4c542",
@@ -55,16 +54,30 @@ export default function Board({ board, ownership, players, pendingAction }) {
         const pos      = getGridPos(tile.id);
         const isCorner = isCornerTile(tile.id);
         const owned    = ownership[tile.id];
-        const ownerColor  = owned ? players.find((p) => p.id === owned.ownerId)?.color : null;
-        const occupants   = players.filter((p) => p.position === tile.id && !p.bankrupt);
-        const isPending   = pendingAction?.tileId === tile.id;
-        const glowColor   = tile.group ? `var(--g-${tile.group})` : (TYPE_GLOW[tile.type] ?? "transparent");
-        const stripColor  = tile.group ? `var(--g-${tile.group})` : (TYPE_GLOW[tile.type] ?? null);
+        const ownerColor = owned ? players.find((p) => p.id === owned.ownerId)?.color : null;
+        const occupants  = players.filter((p) => p.position === tile.id && !p.bankrupt);
+        const isPending  = pendingAction?.tileId === tile.id;
+
+        const glowColor  = tile.group ? `var(--g-${tile.group})` : (TYPE_GLOW[tile.type] ?? "transparent");
+        const stripColor = tile.group ? `var(--g-${tile.group})` : (TYPE_GLOW[tile.type] ?? null);
+
+        // Left col (col 1, not corner): rotate CW so content faces right toward board
+        // Right col (col 9, not corner): rotate CCW so content faces left toward board
+        const isLeftCol  = !isCorner && pos.col === 1;
+        const isRightCol = !isCorner && pos.col === 9;
+        const rotateClass = isLeftCol ? "tile-rotate-cw" : isRightCol ? "tile-rotate-ccw" : "";
 
         return (
           <div
             key={tile.id}
-            className={`tile tile-${tile.type} tile-enter ${isCorner ? "tile-corner" : ""} ${isPending ? "tile-pending" : ""}`}
+            className={[
+              "tile",
+              `tile-${tile.type}`,
+              "tile-enter",
+              isCorner ? "tile-corner" : "",
+              isPending ? "tile-pending" : "",
+              rotateClass,
+            ].filter(Boolean).join(" ")}
             style={{
               gridRow:           pos.row,
               gridColumn:        pos.col,
@@ -72,54 +85,57 @@ export default function Board({ board, ownership, players, pendingAction }) {
               animationDuration: `${TILE_DURS[tile.id]}s`,
             }}
           >
-            {/* Glow blob behind content */}
-            <div className="tile-glow" style={{ background: glowColor }} />
-
-            {/* Thin color strip at top */}
-            {stripColor && (
-              <div className="tile-strip" style={{ background: stripColor }} />
-            )}
-
-            {/* Main content */}
-            <div className={`tile-body ${isCorner ? "tile-body-corner" : ""}`}>
-              {isCorner ? (
-                <>
-                  <div className="tile-icon-lg">{TYPE_ICON[tile.type]}</div>
-                  <div className="tile-name">{tile.name}</div>
-                </>
-              ) : (
-                <>
-                  {/* Group dot for properties */}
-                  {tile.group && (
-                    <div className="tile-dot" style={{ background: `var(--g-${tile.group})` }} />
-                  )}
-                  {/* Large icon for non-property tiles */}
-                  {tile.type !== "property" && TYPE_ICON[tile.type] && (
-                    <div className="tile-icon">{TYPE_ICON[tile.type]}</div>
-                  )}
-                  <div className="tile-name">{tile.name}</div>
-                  {"price" in tile && (
-                    <div className="tile-price" style={{ color: tile.type === "tax" ? "#f97316" : undefined }}>
-                      {tile.type === "tax" ? `-$${tile.amount ?? tile.price}` : `$${tile.price}`}
-                    </div>
-                  )}
-                </>
+            {/* Rotatable inner content — glow + strip + body all spin together */}
+            <div className="tile-content">
+              <div className="tile-glow" style={{ background: glowColor }} />
+              {stripColor && (
+                <div className="tile-strip" style={{ background: stripColor }} />
               )}
+              <div className={`tile-body ${isCorner ? "tile-body-corner" : ""}`}>
+                {isCorner ? (
+                  <>
+                    <div className="tile-icon-lg">{TYPE_ICON[tile.type]}</div>
+                    <div className="tile-name">{tile.name}</div>
+                  </>
+                ) : (
+                  <>
+                    {tile.group && (
+                      <div className="tile-dot" style={{ background: `var(--g-${tile.group})` }} />
+                    )}
+                    {tile.type !== "property" && TYPE_ICON[tile.type] && (
+                      <div className="tile-icon">{TYPE_ICON[tile.type]}</div>
+                    )}
+                    <div className="tile-name">{tile.name}</div>
+                    {"price" in tile && (
+                      <div
+                        className="tile-price"
+                        style={{ color: tile.type === "tax" ? "#f97316" : undefined }}
+                      >
+                        {tile.type === "tax"
+                          ? `-$${tile.amount ?? tile.price}`
+                          : `$${tile.price}`}
+                      </div>
+                    )}
+                  </>
+                )}
+              </div>
             </div>
 
-            {/* Ownership badge */}
+            {/* Ownership badge — not rotated, always top-right of physical tile */}
             {owned && (
               <div
                 className={`tile-owner ${owned.mortgaged ? "tile-owner-mortgaged" : ""}`}
                 style={{ background: ownerColor }}
               >
-                {owned.mortgaged ? "M" : owned.houses > 0
-                  ? <span>{owned.houses === 5 ? "🏨" : owned.houses}</span>
-                  : null}
+                {owned.mortgaged
+                  ? "M"
+                  : owned.houses > 0
+                    ? <span>{owned.houses === 5 ? "🏨" : owned.houses}</span>
+                    : null}
               </div>
             )}
 
-            {/* Player tokens */}
+            {/* Player tokens — not rotated, always bottom-left of physical tile */}
             <div className="tile-tokens">
               {occupants.map((p) => (
                 <span key={p.id} className="token" style={{ background: p.color }} title={p.name} />

@@ -77,8 +77,10 @@
   height: min(100cqw, 100cqh);
   flex-shrink: 0;
   display: grid;
-  grid-template-columns: repeat(9, 1fr);
-  grid-template-rows:    repeat(9, 1fr);
+  /* Corners get 2× the track size so they're bigger squares;
+     edges are 1fr giving portrait left/right and landscape top/bottom */
+  grid-template-columns: 2fr repeat(7, 1fr) 2fr;
+  grid-template-rows:    2fr repeat(7, 1fr) 2fr;
   background: var(--panel);
   border: 1px solid var(--border);
   border-radius: 12px;
@@ -101,8 +103,9 @@
 /* ─── Tile base ──────────────────────────────────────── */
 .tile {
   position: relative;
-  display: flex;
-  flex-direction: column;
+  /* container-type lets children use 100cqw / 100cqh to get the tile's own dimensions,
+     which is the key to rotating side-column content without overflow */
+  container-type: size;
   border: 1px solid rgba(255, 255, 255, 0.06);
   background: linear-gradient(160deg, #0e2218 0%, #0a1a10 100%);
   overflow: hidden;
@@ -120,7 +123,36 @@
   background: linear-gradient(160deg, #132b1c 0%, #0c1f14 100%);
 }
 
-/* ─── Glow blob ──────────────────────────────────────── */
+/* ─── Rotatable content wrapper (glow + strip + body) ── */
+.tile-content {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Left column: rotate 90° CW so tile's "top" faces right (toward board) */
+.tile-rotate-cw .tile-content {
+  inset: unset;
+  /* Swap dimensions before rotation so the content fills the tile after the transform */
+  width:  100cqh;
+  height: 100cqw;
+  top:  50%;
+  left: 50%;
+  transform: translate(-50%, -50%) rotate(90deg);
+}
+
+/* Right column: rotate 90° CCW so tile's "top" faces left (toward board) */
+.tile-rotate-ccw .tile-content {
+  inset: unset;
+  width:  100cqh;
+  height: 100cqw;
+  top:  50%;
+  left: 50%;
+  transform: translate(-50%, -50%) rotate(-90deg);
+}
+
+/* ─── Glow blob (inside tile-content, rotates with it) ── */
 .tile-glow {
   position: absolute;
   top: -55%;
