@@ -112,10 +112,11 @@
   position: absolute;
   inset: 0;
   background: radial-gradient(
-    circle at 50% 58%,
-    color-mix(in srgb, var(--gc, transparent) 40%, transparent) 0%,
-    transparent 68%
+    circle at 50% 55%,
+    var(--gc, transparent) 0%,
+    transparent 70%
   );
+  opacity: 0.28;
   pointer-events: none;
   z-index: 0;
 }
