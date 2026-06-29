@@ -9,16 +9,25 @@ function isCornerTile(id) {
   return id === 0 || id === 8 || id === 16 || id === 24;
 }
 
-const TYPE_ICON = {
-  start:         "→",
-  transit:       "🚂",
-  utility:       "💡",
-  tax:           "⚖",
-  surprise:      "?",
-  treasure:      "📬",
-  rest:          "🚗",
-  holding:       "🔒",
-  go_to_holding: "👮",
+/* Hex values for the inline radial glow on property tiles */
+const GROUP_HEX = {
+  copper:   '#a0522d',
+  teal:     '#29b6e8',
+  violet:   '#e91e8c',
+  amber:    '#ff6d00',
+  crimson:  '#f44336',
+  azure:    '#fdd835',
+  jade:     '#43a047',
+  obsidian: '#1e88e5',
+};
+
+/* Icons for non-property edge tiles */
+const SPECIAL_ICON = {
+  transit:       '🚂',
+  utility:       '⚡',
+  tax:           '💸',
+  surprise:      '❓',
+  treasure:      '📦',
 };
 
 function seededRand(seed) {
@@ -35,64 +44,58 @@ const TILE_DELAYS = Array.from({ length: 32 }, () => {
 });
 const TILE_DURS = Array.from({ length: 32 }, () => 0.45 + rand() * 0.15);
 
-/* ─── Corner tile renderers — one per Monopoly archetype ── */
-function CornerGo({ name }) {
+/* ─── Corner tile components ─────────────────────────── */
+function CornerGo() {
   return (
-    <div className="corner-go-wrap">
-      <div className="corner-collect">Collect $200<br />Salary As You Pass</div>
-      <div className="corner-arrow">→</div>
-      <div className="corner-go-label">GO</div>
+    <div className="corner-wrap">
+      <div className="corner-icon">🟢</div>
+      <div className="corner-label">GO</div>
+      <div className="corner-sub">Collect 200 $</div>
     </div>
   );
 }
 
 function CornerJail({ name }) {
   return (
-    <div className="corner-jail-wrap">
-      <div className="corner-jail-visiting">Just<br />Visiting</div>
-      <div className="corner-jail-bars">
-        <div className="jail-bar" />
-        <div className="jail-bar" />
-        <div className="jail-bar" />
-        <div className="jail-bar" />
-      </div>
-      <div className="corner-jail-label">{name}</div>
+    <div className="corner-wrap">
+      <div className="corner-icon">🔒</div>
+      <div className="corner-label">{name}</div>
+      <div className="corner-sub">Just Visiting</div>
     </div>
   );
 }
 
 function CornerParking({ name }) {
   return (
-    <div className="corner-parking-wrap">
-      <div className="corner-parking-icon">🚗</div>
-      <div className="corner-parking-label">Free</div>
-      <div className="corner-parking-sub">{name}</div>
+    <div className="corner-wrap">
+      <div className="corner-icon">🅿️</div>
+      <div className="corner-label">Free</div>
+      <div className="corner-sub">{name}</div>
     </div>
   );
 }
 
 function CornerGoToJail({ name }) {
   return (
-    <div className="corner-gtj-wrap">
-      <div className="corner-gtj-icon">👮</div>
-      <div className="corner-gtj-label">Go To</div>
-      <div className="corner-gtj-jail">{name}</div>
+    <div className="corner-wrap">
+      <div className="corner-icon">💀</div>
+      <div className="corner-label">Go to prison</div>
     </div>
   );
 }
 
 function CornerContent({ tile }) {
   switch (tile.type) {
-    case "start":         return <CornerGo          name={tile.name} />;
-    case "holding":       return <CornerJail        name={tile.name} />;
-    case "rest":          return <CornerParking     name={tile.name} />;
-    case "go_to_holding": return <CornerGoToJail    name={tile.name} />;
+    case 'start':         return <CornerGo />;
+    case 'holding':       return <CornerJail      name={tile.name} />;
+    case 'rest':          return <CornerParking   name={tile.name} />;
+    case 'go_to_holding': return <CornerGoToJail  name={tile.name} />;
     default:
       return (
-        <>
-          <div className="tile-icon-lg">{TYPE_ICON[tile.type] ?? "★"}</div>
-          <div className="tile-name">{tile.name}</div>
-        </>
+        <div className="corner-wrap">
+          <div className="corner-icon">★</div>
+          <div className="corner-label">{tile.name}</div>
+        </div>
       );
   }
 }
@@ -101,38 +104,36 @@ export default function Board({ board, ownership, players, pendingAction }) {
   return (
     <div className="board">
       {board.map((tile) => {
-        const pos      = getGridPos(tile.id);
-        const isCorner = isCornerTile(tile.id);
-        const owned    = ownership[tile.id];
+        const pos        = getGridPos(tile.id);
+        const isCorner   = isCornerTile(tile.id);
+        const owned      = ownership[tile.id];
         const ownerColor = owned ? players.find((p) => p.id === owned.ownerId)?.color : null;
         const occupants  = players.filter((p) => p.position === tile.id && !p.bankrupt);
         const isPending  = pendingAction?.tileId === tile.id;
+        const isProperty = !!tile.group;
 
-        const stripColor = tile.group ? `var(--g-${tile.group})` : null;
+        const groupHex   = tile.group ? GROUP_HEX[tile.group] : null;
+        const groupVar   = tile.group ? `var(--g-${tile.group})` : null;
 
         const isLeftCol  = !isCorner && pos.col === 1;
         const isRightCol = !isCorner && pos.col === 9;
         const isTopRow   = !isCorner && pos.row === 1;
-        const rotateClass = isLeftCol  ? "tile-rotate-cw"
-                          : isRightCol ? "tile-rotate-ccw"
-                          : isTopRow   ? "tile-rotate-180"
-                          : "";
-
-        const isProperty = !!tile.group;
-        const isChance   = tile.type === "surprise";
-        const isTreasure = tile.type === "treasure";
+        const rotateClass = isLeftCol  ? 'tile-rotate-cw'
+                          : isRightCol ? 'tile-rotate-ccw'
+                          : isTopRow   ? 'tile-rotate-180'
+                          : '';
 
         return (
           <div
             key={tile.id}
             className={[
-              "tile",
+              'tile',
               `tile-${tile.type}`,
-              "tile-enter",
-              isCorner  ? "tile-corner"  : "",
-              isPending ? "tile-pending" : "",
+              'tile-enter',
+              isCorner  ? 'tile-corner'  : '',
+              isPending ? 'tile-pending' : '',
               rotateClass,
-            ].filter(Boolean).join(" ")}
+            ].filter(Boolean).join(' ')}
             style={{
               gridRow:           pos.row,
               gridColumn:        pos.col,
@@ -141,40 +142,47 @@ export default function Board({ board, ownership, players, pendingAction }) {
             }}
           >
             <div className="tile-content">
-              {stripColor && (
-                <div className="tile-strip" style={{ background: stripColor }} />
-              )}
-
               {isCorner ? (
-                <div className="tile-body tile-body-corner">
+                /* ── Corner ── */
+                <div className="tile-body-corner">
                   <CornerContent tile={tile} />
                 </div>
+
               ) : isProperty ? (
-                <div className="tile-body tile-body-property">
-                  <div className="tile-name">{tile.name}</div>
-                  {"price" in tile && <div className="tile-price">${tile.price}</div>}
-                </div>
-              ) : isChance ? (
-                <div className="tile-body">
-                  <div className="tile-chance-mark">?</div>
-                  <div className="tile-name">{tile.name}</div>
-                </div>
-              ) : isTreasure ? (
-                <div className="tile-body">
-                  <div className="tile-chest-mark">📬</div>
-                  <div className="tile-name">{tile.name}</div>
-                </div>
+                /* ── Property tile: glow + badge + name + circle ── */
+                <>
+                  <div
+                    className="tile-glow"
+                    style={{ '--gc': groupHex }}
+                  />
+                  <div className="tile-prop-layout">
+                    {'price' in tile && (
+                      <div className="tile-price-badge">{tile.price} $</div>
+                    )}
+                    <div className="tile-name-lg">{tile.name}</div>
+                    <div
+                      className="tile-group-circle"
+                      style={{ background: groupVar }}
+                    />
+                  </div>
+                </>
+
               ) : (
-                <div className="tile-body">
-                  {TYPE_ICON[tile.type] && (
-                    <div className="tile-icon">{TYPE_ICON[tile.type]}</div>
+                /* ── Special tile: icon + name ── */
+                <div className="tile-special-layout">
+                  {SPECIAL_ICON[tile.type] && (
+                    <div className="tile-special-icon">
+                      {tile.type === 'surprise'
+                        ? <span className="tile-q-mark">?</span>
+                        : SPECIAL_ICON[tile.type]}
+                    </div>
                   )}
-                  <div className="tile-name">{tile.name}</div>
-                  {"price" in tile && (
-                    <div className="tile-price">
-                      {tile.type === "tax"
-                        ? `Pay $${tile.amount ?? tile.price}`
-                        : `$${tile.price}`}
+                  <div className="tile-special-name">{tile.name}</div>
+                  {'price' in tile && (
+                    <div className="tile-special-price">
+                      {tile.type === 'tax'
+                        ? `${tile.amount ?? tile.price} $`
+                        : `${tile.price} $`}
                     </div>
                   )}
                 </div>
@@ -183,20 +191,24 @@ export default function Board({ board, ownership, players, pendingAction }) {
 
             {owned && (
               <div
-                className={`tile-owner ${owned.mortgaged ? "tile-owner-mortgaged" : ""}`}
+                className={`tile-owner${owned.mortgaged ? ' tile-owner-mortgaged' : ''}`}
                 style={{ background: ownerColor }}
               >
-                {owned.mortgaged
-                  ? "M"
+                {owned.mortgaged ? 'M'
                   : owned.houses > 0
-                    ? <span>{owned.houses === 5 ? "🏨" : owned.houses}</span>
+                    ? <span>{owned.houses === 5 ? '🏨' : owned.houses}</span>
                     : null}
               </div>
             )}
 
             <div className="tile-tokens">
               {occupants.map((p) => (
-                <span key={p.id} className="token" style={{ background: p.color }} title={p.name} />
+                <span
+                  key={p.id}
+                  className="token"
+                  style={{ background: p.color }}
+                  title={p.name}
+                />
               ))}
             </div>
           </div>

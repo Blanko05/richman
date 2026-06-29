@@ -43,12 +43,12 @@
   display: grid;
   grid-template-columns: 5fr repeat(7, 3fr) 5fr;
   grid-template-rows:    5fr repeat(7, 3fr) 5fr;
-  /* near-black gap = the "void" RichUp shows between tiles */
   background: #05060e;
   gap: 2px;
   border: 2px solid #14172a;
-  border-radius: 4px;
-  box-shadow: 0 0 60px rgba(0,0,0,0.8), 0 0 120px rgba(0,0,0,0.5);
+  border-radius: 6px;
+  overflow: hidden;
+  box-shadow: 0 0 80px rgba(0,0,0,0.9);
 }
 
 /* ─── Tile drop animation ────────────────────────────── */
@@ -73,7 +73,7 @@
   cursor: default;
   transition: filter 0.12s;
 }
-.tile:hover { filter: brightness(1.12); }
+.tile:hover { filter: brightness(1.15); }
 .tile-corner { background: #1a1d2e; }
 .tile-pending {
   outline: 2px solid #5c6bc0;
@@ -105,217 +105,153 @@
 
 .tile-rotate-180 .tile-content { transform: rotate(180deg); }
 
-/* ─── Property color strip ───────────────────────────── */
-.tile-strip {
-  flex: 0 0 28%;
-  width: 100%;
+/* ─── Property tile ──────────────────────────────────── */
+
+/* Radial glow layer — group color bleeds softly through dark bg */
+.tile-glow {
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(
+    circle at 50% 58%,
+    color-mix(in srgb, var(--gc, transparent) 40%, transparent) 0%,
+    transparent 68%
+  );
+  pointer-events: none;
+  z-index: 0;
 }
 
-/* ─── Tile body ──────────────────────────────────────── */
-.tile-body {
+/* Flex column inside the tile, on top of glow */
+.tile-prop-layout {
+  position: relative;
+  z-index: 1;
   flex: 1;
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: center;
-  padding: clamp(2px, 3cqmin, 5px) clamp(2px, 2.5cqmin, 5px);
-  gap: clamp(1px, 1.2cqmin, 3px);
-  text-align: center;
-}
-
-.tile-body-property {
   justify-content: space-between;
-  padding-top:    clamp(3px, 4cqmin, 8px);
-  padding-bottom: clamp(2px, 3cqmin, 6px);
+  padding: clamp(4px, 7cqmin, 14px) clamp(3px, 5cqmin, 10px);
 }
 
+/* Price pill badge — top */
+.tile-price-badge {
+  background: rgba(255, 255, 255, 0.13);
+  border-radius: clamp(4px, 6cqmin, 10px);
+  padding: clamp(2px, 3cqmin, 5px) clamp(5px, 8cqmin, 14px);
+  font-size: clamp(6px, 9.5cqmin, 14px);
+  font-weight: 700;
+  color: #eceef8;
+  letter-spacing: 0.03em;
+  white-space: nowrap;
+}
+
+/* Large property name — center */
+.tile-name-lg {
+  font-size: clamp(7px, 10.5cqmin, 15px);
+  font-weight: 800;
+  color: #ffffff;
+  text-align: center;
+  letter-spacing: 0.01em;
+  line-height: 1.15;
+}
+
+/* Group color circle — bottom */
+.tile-group-circle {
+  width:  clamp(10px, 16cqmin, 26px);
+  height: clamp(10px, 16cqmin, 26px);
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+/* ─── Special (non-property, non-corner) tile ────────── */
+.tile-special-layout {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: space-between;
+  padding: clamp(5px, 8cqmin, 16px) clamp(3px, 5cqmin, 10px);
+}
+
+/* Large icon in upper portion */
+.tile-special-icon {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: clamp(12px, 20cqmin, 32px);
+  line-height: 1;
+}
+
+/* Orange italic "?" for Chance tiles */
+.tile-q-mark {
+  font-size: clamp(14px, 22cqmin, 36px);
+  font-weight: 900;
+  font-style: italic;
+  color: #ff6d00;
+  line-height: 1;
+}
+
+/* Name at the bottom */
+.tile-special-name {
+  font-size: clamp(5.5px, 8cqmin, 11px);
+  font-weight: 700;
+  color: #eceef8;
+  text-align: center;
+  letter-spacing: 0.03em;
+  line-height: 1.2;
+}
+
+/* Small price below name (for tax, transit, etc.) */
+.tile-special-price {
+  font-size: clamp(5px, 7cqmin, 10px);
+  font-weight: 600;
+  color: rgba(255,255,255,0.45);
+  letter-spacing: 0.03em;
+  margin-top: clamp(1px, 1.5cqmin, 3px);
+}
+
+/* ─── Corner tiles ───────────────────────────────────── */
 .tile-body-corner {
   position: absolute;
   inset: 0;
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: clamp(3px, 4cqmin, 10px);
 }
 
-/* ─── Text ───────────────────────────────────────────── */
-.tile-name {
-  font-size: clamp(5.5px, 8.5cqmin, 10px);
-  font-weight: 700;
-  color: #eceef8;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  line-height: 1.15;
-}
-
-.tile-icon    { font-size: clamp(10px, 15cqmin, 20px); line-height: 1; }
-.tile-icon-lg { font-size: clamp(18px, 28cqmin, 44px); line-height: 1; }
-
-.tile-price {
-  font-size: clamp(5px, 7.5cqmin, 9px);
-  font-weight: 600;
-  color: #7a80a0;
-  letter-spacing: 0.04em;
-}
-
-/* ─── Chance mark ────────────────────────────────────── */
-.tile-chance-mark {
-  font-size: clamp(16px, 26cqmin, 40px);
-  font-weight: 900;
-  color: #ff6d00;
-  line-height: 1;
-  font-style: italic;
-}
-
-/* ─── Community Chest mark ───────────────────────────── */
-.tile-chest-mark {
-  font-size: clamp(13px, 20cqmin, 30px);
-  line-height: 1;
-}
-
-/* ─── Corner: GO ─────────────────────────────────────── */
-.corner-go-wrap {
+/* All corners use the same icon + label structure */
+.corner-wrap {
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: clamp(1px, 2cqmin, 5px);
+  gap: clamp(2px, 3cqmin, 7px);
   width: 100%;
   height: 100%;
+  padding: clamp(4px, 6cqmin, 12px);
 }
 
-.corner-collect {
-  font-size: clamp(4px, 6cqmin, 9px);
+.corner-icon {
+  font-size: clamp(18px, 26cqmin, 44px);
+  line-height: 1;
+}
+
+.corner-label {
+  font-size: clamp(7px, 11cqmin, 17px);
+  font-weight: 800;
+  color: #eceef8;
+  text-align: center;
+  letter-spacing: 0.04em;
+  line-height: 1.1;
+}
+
+.corner-sub {
+  font-size: clamp(4.5px, 7cqmin, 10px);
   font-weight: 600;
-  color: #7a80a0;
-  text-transform: uppercase;
+  color: rgba(255,255,255,0.45);
+  text-align: center;
   letter-spacing: 0.04em;
   line-height: 1.2;
-  text-align: center;
-}
-
-.corner-arrow {
-  font-size: clamp(22px, 34cqmin, 52px);
-  font-weight: 900;
-  color: #43a047;
-  line-height: 1;
-}
-
-.corner-go-label {
-  font-size: clamp(14px, 22cqmin, 34px);
-  font-weight: 900;
-  color: #43a047;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  line-height: 1;
-}
-
-/* ─── Corner: Jail / Just Visiting ───────────────────── */
-.corner-jail-wrap {
-  width: 100%;
-  height: 100%;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: clamp(2px, 3cqmin, 6px);
-  border: clamp(1px, 1.5cqmin, 3px) solid #f44336;
-  box-sizing: border-box;
-}
-
-.corner-jail-visiting {
-  font-size: clamp(4.5px, 7cqmin, 10px);
-  font-weight: 700;
-  color: #eceef8;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  line-height: 1.15;
-  text-align: center;
-}
-
-.corner-jail-bars {
-  display: flex;
-  gap: clamp(2px, 2.5cqmin, 5px);
-  align-items: stretch;
-  height: clamp(10px, 15cqmin, 28px);
-}
-
-.jail-bar {
-  width: clamp(1.5px, 2cqmin, 4px);
-  background: #7a80a0;
-  border-radius: 1px;
-}
-
-.corner-jail-label {
-  font-size: clamp(4.5px, 7cqmin, 10px);
-  font-weight: 700;
-  color: #f44336;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-}
-
-/* ─── Corner: Free Parking ───────────────────────────── */
-.corner-parking-wrap {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: clamp(1px, 2cqmin, 4px);
-  width: 100%;
-  height: 100%;
-}
-
-.corner-parking-icon {
-  font-size: clamp(18px, 26cqmin, 40px);
-  line-height: 1;
-}
-
-.corner-parking-label {
-  font-size: clamp(8px, 13cqmin, 20px);
-  font-weight: 900;
-  color: #fdd835;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-}
-
-.corner-parking-sub {
-  font-size: clamp(4.5px, 7cqmin, 10px);
-  font-weight: 600;
-  color: #7a80a0;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-}
-
-/* ─── Corner: Go To Jail ─────────────────────────────── */
-.corner-gtj-wrap {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: clamp(1px, 2cqmin, 4px);
-  width: 100%;
-  height: 100%;
-}
-
-.corner-gtj-icon {
-  font-size: clamp(20px, 28cqmin, 44px);
-  line-height: 1;
-}
-
-.corner-gtj-label {
-  font-size: clamp(5.5px, 8.5cqmin, 13px);
-  font-weight: 700;
-  color: #7a80a0;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-}
-
-.corner-gtj-jail {
-  font-size: clamp(7px, 11cqmin, 17px);
-  font-weight: 900;
-  color: #f44336;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
 }
 
 /* ─── Ownership badge ────────────────────────────────── */
@@ -328,7 +264,7 @@
   display: flex; align-items: center; justify-content: center;
   font-size: 8px; font-weight: 700;
   color: #fff;
-  z-index: 2;
+  z-index: 10;
 }
 .tile-owner-mortgaged { opacity: 0.5; }
 
@@ -337,7 +273,7 @@
   position: absolute;
   bottom: 2px; left: 2px;
   display: flex; gap: 2px; flex-wrap: wrap;
-  z-index: 2;
+  z-index: 10;
 }
 .token {
   width: 10px; height: 10px;
@@ -365,7 +301,6 @@
 
 .board-center-f {
   display: block;
-  font-family: "Inter", "Arial Black", Arial, sans-serif;
   font-size: clamp(16px, 3.4vw, 56px);
   font-weight: 800;
   text-transform: uppercase;
@@ -377,7 +312,6 @@
 
 .board-center-c {
   display: block;
-  font-family: "Inter", "Arial Black", Arial, sans-serif;
   font-size: clamp(14px, 2.8vw, 46px);
   font-weight: 700;
   text-transform: uppercase;
