@@ -28,25 +28,54 @@
 .divider { text-align: center; color: var(--text-dim); font-size: 13px; margin: 4px 0; }
 .error   { color: #ed1c24; font-size: 13px; }
 
-/* ─── Game screen: board fills the viewport ─────────── */
+/* ─── Game screen: 3-column layout ──────────────────── */
 .game-screen {
-  width:  100vw;
+  display: grid;
+  grid-template-columns: 220px 1fr 220px;
+  grid-template-rows: 1fr;
+  gap: 12px;
+  padding: 12px;
   height: 100vh;
+  overflow: hidden;
+  align-items: stretch;
+  background: var(--bg);
+}
+
+/* ─── Sidebars ───────────────────────────────────────── */
+.left-sidebar,
+.right-sidebar {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-height: 0;
+}
+
+.placeholder-block {
+  flex: 1;
+  background: #fff;
+  border: 2px solid #000;
+  border-radius: 6px;
+  min-height: 0;
+}
+
+/* ─── Board wrap — size container so board can be square */
+.board-wrap {
+  container-type: size;
   display: flex;
   align-items: center;
   justify-content: center;
-  background: var(--bg);   /* dark green surround */
+  min-height: 0;
 }
 
 /* ─── Board ──────────────────────────────────────────── */
 .board {
   /*
-   * Keep the board a perfect square (Monopoly boards are square).
+   * Square that fits inside the center column.
    * 5fr corners : 3fr regular = 2.5" : 1.5" — exact Monopoly ratio.
    * background #000 shows as 1 px black grid lines through the gap.
    */
-  width:  min(100vw, 100vh);
-  height: min(100vw, 100vh);
+  width:  min(100cqw, 100cqh);
+  height: min(100cqw, 100cqh);
   display: grid;
   grid-template-columns: 5fr repeat(7, 3fr) 5fr;
   grid-template-rows:    5fr repeat(7, 3fr) 5fr;
