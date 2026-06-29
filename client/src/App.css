@@ -72,15 +72,13 @@
 }
 
 .board {
-  /* Square that fits inside whatever space the column provides */
-  width:  min(100cqw, 100cqh);
-  height: min(100cqw, 100cqh);
-  flex-shrink: 0;
+  /* Fill the full board-wrap in both directions so tiles reach the column edges */
+  width:  100cqw;
+  height: 100cqh;
   display: grid;
-  /* Corners are 1.6× edge tiles (smaller squares than before);
-     edge tiles are 1.2fr to make them a bit wider */
-  grid-template-columns: 1.6fr repeat(7, 1.2fr) 1.6fr;
-  grid-template-rows:    1.6fr repeat(7, 1.2fr) 1.6fr;
+  /* Corners are 1.6× edge tiles; edge tiles bumped to 1.3fr to be a bit bigger */
+  grid-template-columns: 1.6fr repeat(7, 1.3fr) 1.6fr;
+  grid-template-rows:    1.6fr repeat(7, 1.3fr) 1.6fr;
   background: var(--panel);
   border: 1px solid var(--border);
   border-radius: 12px;
