@@ -24,11 +24,33 @@ display results.
 ## 2. Server (`server/src/`)
 
 ### 2.1 `game/board.js` — static board data
-- Exports `BOARD`: an array of 32 tile objects (index = tile id = board
-  position). Each tile has a `type` from `TILE_TYPES` (`start`, `property`,
-  `transit`, `utility`, `surprise`, `treasure`, `tax`, `rest`, `holding`,
-  `go_to_holding`) plus type-specific fields (`price`, `rent` table, `group`,
-  `housePrice`, `multiplier`, `amount`).
+- Exports `BOARD`: an array of **48** tile objects (index = tile id = board
+  position, 12 per side on a 13×13 grid). Each tile has a `type` from
+  `TILE_TYPES` (`start`, `property`, `transit`, `utility`, `surprise`,
+  `treasure`, `tax`, `rest`, `holding`, `go_to_holding`) plus type-specific
+  fields (`price`, `rent` table, `group`, `housePrice`, `multiplier`,
+  `amount`). `UTILITY` is unused by the current board data (no tile maps to
+  it) but stays in `TILE_TYPES`/`calcRent` as generic engine support, not
+  dead code specific to this board.
+- Ids increase **clockwise from id 0 (`البداية`, top-left corner)**:
+  rightward across the top (0–12), down the right side (13–24), leftward
+  across the bottom (25–36), up the left side back to Start (37–47). The 4
+  corners (0, 12, 24, 36) hold Start/Holding/Rest/Go-to-Holding, same
+  placement convention as before the board was widened.
+- **9 property color groups** (replacing the old 8), sizes 2–4 tiles each:
+  `pink` (2), `blueTop` (3), `olive` (2), `salmonRight` (3), `goldenrod` (3),
+  `greenBottom` (3), `violetBottom` (3), `salmonLeft` (4), `tealLeft` (3) —
+  26 property tiles total. Prices/rents climb with distance from Start, same
+  convention as before, re-tuned for the wider board (pink $60 → tealLeft
+  $420).
+- **6 station tiles** (`transit`, flat $150, rent scales by how many of the
+  6 a single owner holds: `[25, 50, 75, 100, 150, 200]`), **3 tax tiles**
+  (`ضريبة`, $100/$150/$200 by board position), **4 treasure-draw tiles**
+  (`treasure` type — despite different in-fiction names like `صندوق الحج`/
+  `جمعية الديوان`, they're functionally identical card draws), **3
+  luck-draw tiles** (`surprise` type, all named `الحظ`), and **2 mid-edge
+  "safety" rest tiles** (`عليكم الأمان`, `rest` type — a no-op safe space,
+  same mechanic as the corner rest tile, just not a corner).
 - Property `rent` arrays are `[level0..level5]` — level 0 = base rent
   (unimproved), levels 1–4 = houses, level 5 = hotel.
 - `propertiesByGroup(group)` — helper used to check monopoly/full-group
@@ -46,11 +68,34 @@ display results.
   draw).
 
 Also `game/characters.js`, same static-data pattern: `CHARACTER_IDS` (the
-six playable codenames — `D`, `Z`, `Y`, `H`, `SD`, `SE`) and
-`CHARACTER_NAMES` (codename → real display name, e.g. `D: "دروبي"`). This
-is **identity data only** — there is no ability logic anywhere server-side
-yet; the full ability spec lives in `characters.md` as a design doc not
-yet implemented (see §6).
+six playable archetypes — `don`, `enforcer`, `wrecker`, `kingpin`,
+`conductor`, `fixer`, matching `characters.md`'s ability spec 1:1) and
+`CHARACTER_NAMES` (id → generic Arabic display name, e.g. `don: "الدون"`).
+This is **identity data only** — there is no ability logic anywhere
+server-side yet; the full ability spec lives in `characters.md` as a design
+doc not yet implemented (see §6).
+
+**Identity is deliberately split from "skin."** `CHARACTER_IDS`/
+`CHARACTER_NAMES` here are generic crime-archetype labels with no
+real-world references, chosen specifically so this file (and any future
+ability logic keyed on these ids) stays safe to open-source. The actual
+display layer — names, flavor text, portraits — lives entirely in
+`client/src/data/characters.js` + `client/public/characters/<id>/`, and can
+be swapped for a different "skin" (e.g. a private set with names/photos
+relevant to a specific friend group) without touching this file, `Room.js`,
+or any component: every consumer reads characters generically by id, never
+by a hardcoded name.
+
+Also exports `ABILITIES`: `characterId -> [{ id, cooldownTurns }, ...]` —
+one entry per active ability (Kingpin is the only character with two).
+`cooldownTurns` is the number of that character's own elapsed turns before
+the ability is usable again; for the two abilities whose real cooldown
+formula depends on the size of the action taken (Wrecker's Detonate,
+Fixer's Heist — see `characters.md`), this is just the documented
+minimum/baseline, used until those effects (and their real formulas) are
+implemented. Passive abilities have no entry here — they're not actions,
+just always-on rules that will be implemented directly in the relevant
+`Room.js` methods (rent/tax/trade code) once built.
 
 ### 2.3 `game/Room.js` — the game engine
 One `Room` instance per active game (keyed by room code).
@@ -58,7 +103,10 @@ One `Room` instance per active game (keyed by room code).
 **State held per room:**
 - `players[]` — `{ id, token, name, color, connected, graceTimer, balance,
   position, inHolding, holdingTurns, holdingFreeCard, bankrupt, left,
-  properties[] }`. `id` is a stable identity (nanoid) independent of any
+  properties[], characterId, abilityCooldowns }`. `abilityCooldowns` is
+  `abilityId -> turns remaining` (absent/0 = ready), set by `useAbility` and
+  decremented once per that player's own elapsed turn in `endTurn()` — see
+  "Character abilities" below. `id` is a stable identity (nanoid) independent of any
   socket — see §2.4. `token` is a private secret (stripped before
   `toState()` ever broadcasts it) that authorizes reclaiming a seat within
   the disconnect grace window — see "Disconnect grace window" below.
@@ -115,7 +163,7 @@ rollDice(playerId)
        -> if still stuck (no escape, not yet at the 3-turn cap): finishTurn(player), return early
   -> tracks consecutiveDoubles; 3 in a row -> sendToHolding(player), skip the move entirely
   -> movePlayer(player, steps)
-       -> wraps position around the 32 tiles, pays 200 on passing Start
+       -> wraps position around the 48 tiles, pays 200 on passing Start
        -> resolveTile(player)
             -> branches on tile type:
                  property/transit/utility -> open awaitBuy, or charge rent if owned by someone else
@@ -287,6 +335,24 @@ before anyone's picked; it's never shown once `start()` runs.
   you are" takes effect. A player with no selection (shouldn't be
   reachable in practice — see the `startGame` precondition in §2.4) simply
   keeps their placeholder name.
+
+**Character abilities (scaffolding only — no real effects yet):**
+`useAbility(playerId, abilityId)` is gated like a turn action (current
+player only, no `pendingAction` open — these are board-altering powers,
+not a side negotiation like trading) and validates the player's
+`characterId` actually owns `abilityId` against the `ABILITIES` registry
+(§2.1). On success it sets `player.abilityCooldowns[abilityId]` to that
+ability's `cooldownTurns` and logs the activation — **it does not yet
+apply any of the actual per-character effects** (seizing tiles, demolishing
+buildings, skimming rent, cursing a target, etc.); those are individually
+unimplemented, see §6. This exists so the card UI has a real, working
+cooldown/activate button ahead of the actual ability-effect implementation
+pass. Cooldowns decrement by exactly one in `endTurn()`, for whichever
+player's turn is currently ending — matching the "counted in their own
+elapsed turns" convention `characters.md` documents (the same convention
+the old Y/Seizer ability used pre-redesign). Passive abilities have no
+code path at all yet — no rent/tax/trade method currently checks a
+player's `characterId`.
 
 **Turn timer (4-minute hard cap):** every player gets exactly
 `TURN_TIME_LIMIT_MS` (4 minutes) of wall-clock time to complete their
@@ -620,13 +686,16 @@ the next remaining active player automatically becomes host.
   purely presentational data, independent of and not synced with the
   server's `characters.js` (which only knows ids and real names, no
   images or descriptions).
-- `components/CharacterCard.jsx` — a click-to-flip card for one character.
-  Front: balance-gated portrait (`player.balance >= 3000 ? v2 : v1`),
-  name, description. Back: passive/active text plus a context-sensitive
+- `components/CharacterCard.jsx` — a click-to-flip card for one character,
+  used in `CharacterSelect` (pre-game). Front: balance-gated portrait
+  (`player.balance >= 3000 ? v2 : v1`), name, description. Back: the
+  passive block plus one block per entry in `char.actives[]` (label +
+  cooldown length + description — `data/characters.js`'s `actives` array,
+  not a single `active` string; Kingpin has two), plus a context-sensitive
   control — `Play as <name>` if unclaimed, `Change character` if it's the
   viewer's own current pick, or a plain `Taken by <name>` label (no
-  button) if someone else already has it. Used in both `CharacterSelect`
-  (pre-game) and `PlayerCard` (in-game, see below).
+  button) if someone else already has it. No cooldown *state* shown here —
+  that's only meaningful in-game (see `PlayerCard.jsx` below).
 - `components/CharacterSelect.jsx` — the pre-game lobby screen. Shows the
   room code, a chip per player (color swatch, their picked character's
   name or "picking…", a Host badge), the full 6-card grid via
@@ -638,14 +707,20 @@ the next remaining active player automatically becomes host.
   `state.players`.
 - `components/PlayerCard.jsx` — the viewer's *own* character card, shown
   in-game (not during selection) in a dedicated column to the left of the
-  board. Same flip/portrait-swap behavior as `CharacterCard`'s front face,
-  but simplified to display-only (no select/change controls — the pick is
-  already locked in once the game has started). The front face's lower
-  portion is an intentionally empty `.player-card-tracker` div — reserved
-  for a future per-character ability-cooldown/use-count display once
-  abilities are implemented (§6), not built out yet.
-- `components/Board.jsx` — `getGridPos(i)` maps each of the 32 tile indices
-  onto a 9×9 CSS grid perimeter (tiles 0/8/16/24 are the four corners).
+  board. A separate component from `CharacterCard.jsx` (not a reuse of it)
+  with its own front/back markup: same flip/portrait-swap behavior, back
+  face shows the same passive+actives breakdown, but the front face's
+  `.player-card-tracker` is no longer empty — one row per active ability,
+  showing "جاهزة" (ready) or the turns remaining from
+  `player.abilityCooldowns[ability.id]`, plus a "تفعيل" (activate) button
+  that emits `useAbility`. The button is disabled unless it's actually the
+  viewer's turn (`isMyTurn`, threaded in from `App.jsx`), no
+  `pendingAction` is open, and the ability is off cooldown — mirroring the
+  server's own `useAbility` guards client-side as a UX nicety; the server
+  is still the real authority. Clicking the button calls
+  `e.stopPropagation()` so it doesn't also trigger the card's flip-on-click.
+- `components/Board.jsx` — `getGridPos(i)` maps each of the 48 tile indices
+  onto a 13×13 CSS grid perimeter (tiles 0/12/24/36 are the four corners).
   Purely presentational: reads `board`, `ownership`, `players`,
   `pendingAction`, `lastRoll`, `rollSeq` props and renders tiles, ownership
   color strip, house count (or an "M" badge in place of the house count
@@ -754,6 +829,7 @@ the next remaining active player automatically becomes host.
 | `rejoinRoom` | `{ code, playerId, token }` | ack: `{ ok, code, playerId, token }` or `{ error }`; only succeeds within the 20s disconnect grace window |
 | `selectCharacter` | `{ characterId }` | pre-start-only; rejects if already taken by someone else; ack: `{ ok }` or `{ error }` |
 | `resetCharacterSelections` | — | host-only, pre-start-only; clears every player's pick |
+| `useAbility` | `{ abilityId }` | current-player-only, no `pendingAction` open; starts the cooldown and logs the activation only -- no real effect yet (§2.3, §6); ack: `{ ok }` or `{ error }` |
 | `startGame` | — | host-only, requires ≥2 players **and** every player having a `characterSelections` entry |
 | `rollDice` | — | current-player-only; rejected if `pendingAction` set |
 | `buyProperty` | — | resolves `pendingAction: awaitBuy` |
@@ -974,20 +1050,35 @@ grows much larger or tick rate increases.
   themselves, both of which already enforce it on the way in.
 
 ## 6. Known gaps (not yet built)
-- **Character abilities are entirely unimplemented.** `characters.md`
-  has the full locked design (D's toll zone, Z's trade/tax skim, Y's
-  seize/demolish, H's territory expansion, SD's station toll plus attack
-  power, SE's bank bonus plus alliance) but none of it is wired into
-  `Room.js` yet — picking a character currently only changes a player's
-  name/portrait, with zero gameplay effect. This was an explicit scope
-  boundary for the pass that built selection, not an oversight.
-- The flavor-text `passive`/`active` descriptions in `client/src/data/
-  characters.js` are placeholder wording the user asked to fill in "for
-  now" — not the real ability spec, which stays in `characters.md` until
-  an implementation pass exists to consume it.
-- `PlayerCard.jsx`'s `.player-card-tracker` div is intentionally empty —
-  reserved for a future per-character ability-cooldown/use-count display,
-  not built out yet since there are no abilities to track.
+- **Character ability *effects* are entirely unimplemented.**
+  `characters.md` has the full locked design (Don's turf zone + Barricade,
+  Enforcer's trade/tax skim + Curse, Wrecker's demolition bounty +
+  Detonate, Kingpin's turf zone + Flank Seizure/Hostile Takeover,
+  Conductor's station toll + Wrecking Tour, Fixer's bank bonus + Heist),
+  and the card UI/cooldown plumbing is real (`useAbility`, §2.3), but none
+  of the actual per-character game effects are wired into `Room.js` yet —
+  activating an ability right now just starts its cooldown and logs the
+  attempt. No passive ability has any code path at all (no rent/tax/trade
+  method checks `characterId`). This is the next implementation pass, not
+  an oversight — the UI/cooldown scaffolding was built first deliberately
+  so it didn't have to be retrofitted onto each ability's effect later.
+- The flavor-text `description`/`passive`/`actives[].text` in `client/src/
+  data/characters.js` are placeholder wording — not necessarily final, can
+  be edited freely since the real ability spec lives in `characters.md`.
+- For abilities whose real cooldown formula depends on the size of the
+  action taken (Wrecker's Detonate: 3–9 turns by destruction size; Fixer's
+  Heist: 5 + half the stolen ability's own cooldown), `useAbility`
+  currently always charges the documented minimum/baseline regardless of
+  what would actually be targeted — there's no target-selection step yet
+  for *any* ability (Don's barricade tile, Enforcer's curse target,
+  Wrecker/Kingpin/Conductor's target property, Fixer's ability-to-steal),
+  since that's tied to the effect implementation, not the cooldown
+  scaffolding built this pass.
+- No cap on how many active abilities can be on cooldown across the table
+  at once, and no UI surfacing *other* players' cooldowns (each
+  `PlayerCard` only shows the viewer's own — `state.players[]` does carry
+  every player's `abilityCooldowns`, so this is a display gap, not a data
+  gap).
 - The grace window is a single fixed 20s for everyone, with no visibility
   into it for other players beyond a generic "reconnecting..." badge —
   there's no shared countdown showing exactly how much of the window is

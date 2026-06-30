@@ -220,14 +220,6 @@ export default function Hud({ state, myId, onLeave }) {
         </ul>
       </div>
 
-      <div className="hud-section log">
-        <h3>Log</h3>
-        <ul>
-          {state.log.map((entry, i) => (
-            <li key={i}>{entry}</li>
-          ))}
-        </ul>
-      </div>
     </div>
   );
 }

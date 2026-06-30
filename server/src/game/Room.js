@@ -1,7 +1,7 @@
 import { nanoid } from "nanoid";
 import { BOARD, TILE_TYPES, TOTAL_TILES, propertiesByGroup } from "./board.js";
 import { SURPRISE_CARDS, TREASURE_CARDS, shuffledDeck } from "./cards.js";
-import { CHARACTER_IDS, CHARACTER_NAMES } from "./characters.js";
+import { CHARACTER_IDS, CHARACTER_NAMES, ABILITIES } from "./characters.js";
 
 // Exported so the test suite can assert against these by name instead of
 // hardcoding magic numbers that would silently drift out of sync if tuned here.
@@ -65,6 +65,7 @@ export class Room {
       bankrupt: false,
       left: false,
       properties: [],
+      abilityCooldowns: {}, // abilityId -> turns remaining; absent/0 means ready, set once a characterId is assigned
     });
   }
 
@@ -178,6 +179,30 @@ export class Room {
     if (playerId !== this.hostId) return { error: "Not the host" };
     if (this.started) return { error: "Game already started" };
     this.characterSelections = {};
+    return { ok: true };
+  }
+
+  // Scaffolding only -- validates eligibility, starts the cooldown, and logs
+  // the activation, but does not yet apply any of the actual per-ability
+  // game effects (seizing tiles, demolishing buildings, skimming rent,
+  // etc.). Those are the next implementation pass per character; this is
+  // what lets the card UI show a real, working cooldown/activate button
+  // ahead of that. Gated to the player's own turn with no pendingAction
+  // open, same as the other turn actions (roll/build) -- these are
+  // board-altering abilities, not a side negotiation like trading.
+  useAbility(playerId, abilityId) {
+    const current = this.currentPlayer();
+    if (!current || current.id !== playerId) return { error: "Not your turn" };
+    if (this.pendingAction) return { error: "Resolve the current action first" };
+    const player = this.playerById(playerId);
+    const abilities = ABILITIES[player?.characterId] || [];
+    const ability = abilities.find((a) => a.id === abilityId);
+    if (!ability) return { error: "That character has no such ability" };
+    if (!player.abilityCooldowns) player.abilityCooldowns = {};
+    const remaining = player.abilityCooldowns[abilityId] || 0;
+    if (remaining > 0) return { error: `Still recharging (${remaining} turn(s) left)` };
+    player.abilityCooldowns[abilityId] = ability.cooldownTurns;
+    this.pushLog(`${player.name} used ${CHARACTER_NAMES[player.characterId]}'s ability (effect not yet implemented).`);
     return { ok: true };
   }
 
@@ -441,7 +466,7 @@ export class Room {
       this.pushLog(`${player.name} used a free pass to avoid the Holding Pen.`);
       return;
     }
-    player.position = 8; // Holding Pen tile index (a board corner, see board.js)
+    player.position = BOARD.find((t) => t.type === TILE_TYPES.HOLDING).id; // a board corner, see board.js
     player.inHolding = true;
     player.holdingTurns = 0;
     this.pushLog(`${player.name} was sent to the Holding Pen.`);
@@ -896,6 +921,16 @@ export class Room {
   endTurn() {
     this.clearTurnTimer();
     this.pendingAction = null;
+    // Ability cooldowns count down once per the finishing player's own elapsed
+    // turn (matching the recharge convention documented in characters.md), so
+    // this has to happen here -- the one place a turn actually ends -- before
+    // turnIndex moves on to whoever's next.
+    const finishing = this.players[this.turnIndex];
+    if (finishing?.abilityCooldowns) {
+      for (const id of Object.keys(finishing.abilityCooldowns)) {
+        if (finishing.abilityCooldowns[id] > 0) finishing.abilityCooldowns[id] -= 1;
+      }
+    }
     if (this.activePlayers().length <= 1) return;
     do {
       this.turnIndex = (this.turnIndex + 1) % this.players.length;

@@ -1,0 +1,31 @@
+.bg-root { background:#000; display:flex; align-items:center; justify-content:center; min-height:0; }
+.bg-board { border:3px solid #333; gap:2px; background:#000; }
+.bg-tile { position:relative; display:flex; flex-direction:column; overflow:hidden; box-sizing:border-box; }
+
+/* Owner bar on INNER edge */
+.bg-side-top .bg-owner-bar { position:absolute; bottom:0; left:0; right:0; height:5px; }
+.bg-side-right .bg-owner-bar { position:absolute; top:0; left:0; bottom:0; width:5px; }
+.bg-side-bottom .bg-owner-bar { position:absolute; top:0; left:0; right:0; height:5px; }
+.bg-side-left .bg-owner-bar { position:absolute; top:0; right:0; bottom:0; width:5px; }
+
+/* Body */
+.bg-body { flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center; padding:2px; overflow:hidden; min-height:0; min-width:0; }
+
+/* REQUIRED side-tile text rotation */
+.bg-side-left .bg-body { writing-mode: vertical-lr; transform: rotate(180deg); }
+.bg-side-right .bg-body { writing-mode: vertical-rl; }
+.bg-corner .bg-body { writing-mode: initial; transform: none; }
+
+.bg-name { color:#fff; font-family: "Arial Black","Impact",system-ui,sans-serif; font-size:7px; font-weight:900; line-height:1.1; word-break:break-word; text-align:center; text-transform:uppercase; }
+.bg-price { color:rgba(255,255,255,0.7); font-size:5.5px; font-weight:700; text-transform:uppercase; }
+.bg-corner { background:#000 !important; color:#fff; }
+.bg-center { grid-row:2/13; grid-column:2/13; background:#000; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:12px; }
+.bg-title { color:#fff; font-family:"Arial Black","Impact",sans-serif; font-weight:900; font-size:clamp(16px,3vw,40px); text-align:center; text-transform:uppercase; letter-spacing:2px; }
+.bg-dice { color:#fff; font-size:32px; font-weight:900; font-family:"Arial Black",sans-serif; }
+.bg-tokens { position:absolute; bottom:5px; left:0; right:0; display:flex; justify-content:center; gap:2px; flex-wrap:wrap; }
+.bg-token { width:12px; height:12px; border-radius:50%; color:#fff; font-size:7px; font-weight:800; display:flex; align-items:center; justify-content:center; border:1.5px solid rgba(255,255,255,0.5); }
+.bg-dev { position:absolute; top:2px; right:2px; font-size:7px; font-weight:900; color:#fff; }
+.bg-pending { outline:3px solid #ff0; outline-offset:-2px; z-index:1; }
+.bg-players { display:flex; flex-direction:column; gap:4px; }
+.bg-prow { display:flex; align-items:center; gap:6px; color:#ccc; font-size:11px; }
+.bg-dot { width:10px; height:10px; border-radius:50%; flex-shrink:0; }

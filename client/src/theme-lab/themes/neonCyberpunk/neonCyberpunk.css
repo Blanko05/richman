@@ -1,0 +1,298 @@
+/* ============================================================
+   DARK ELITE THEME — Premium black-card luxury aesthetic
+   All selectors scoped under .de-* to avoid collisions
+   ============================================================ */
+
+/* ── Root wrapper ── */
+.de-root {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  background: #0a0a0a;
+}
+
+/* ── Board grid container ── */
+.de-board {
+  position: relative;
+  background: #111111;
+  border: 3px solid #2a2a2a;
+  box-sizing: border-box;
+}
+
+/* ── Every tile ── */
+.de-tile {
+  position: relative;
+  background: #111111;
+  border: 1px solid #222222;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  box-sizing: border-box;
+}
+
+/* ══════════════════════════════════════════════════
+   COLOR BAND — sits on the OUTER edge of each tile
+   ══════════════════════════════════════════════════ */
+
+.de-band {
+  position: absolute;
+  z-index: 1;
+  flex-shrink: 0;
+}
+
+/* Top-row tiles: band on top */
+.de-side-top .de-band {
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 30%;
+}
+
+/* Right-column tiles: band on right */
+.de-side-right .de-band {
+  top: 0;
+  bottom: 0;
+  right: 0;
+  width: 30%;
+}
+
+/* Bottom-row tiles: band on bottom */
+.de-side-bottom .de-band {
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 30%;
+}
+
+/* Left-column tiles: band on left */
+.de-side-left .de-band {
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 30%;
+}
+
+/* Corners: no band (no group), do nothing */
+
+/* ══════════════════════════════════════════════════
+   OWNER BAR — 5-6 px strip on the INNER edge
+   ══════════════════════════════════════════════════ */
+
+.de-owner-bar {
+  position: absolute;
+  z-index: 2;
+  flex-shrink: 0;
+}
+
+.de-side-top .de-owner-bar {
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 5px;
+}
+
+.de-side-right .de-owner-bar {
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 5px;
+}
+
+.de-side-bottom .de-owner-bar {
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 5px;
+}
+
+.de-side-left .de-owner-bar {
+  top: 0;
+  bottom: 0;
+  right: 0;
+  width: 5px;
+}
+
+/* ══════════════════════════════════════════════════
+   TILE BODY — holds name + price
+   ══════════════════════════════════════════════════ */
+
+.de-body {
+  position: relative;
+  z-index: 3;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 2px;
+  overflow: hidden;
+  min-height: 0;
+  min-width: 0;
+  gap: 1px;
+}
+
+/* Writing-mode for side tiles — NON-NEGOTIABLE */
+.de-side-left .de-body {
+  writing-mode: vertical-lr;
+  transform: rotate(180deg);
+}
+
+.de-side-right .de-body {
+  writing-mode: vertical-rl;
+}
+
+/* ── Text inside body ── */
+.de-name {
+  color: #f0ece4;
+  font-size: 7px;
+  font-weight: 700;
+  font-family: system-ui, "Helvetica Neue", Helvetica, Arial, sans-serif;
+  line-height: 1.15;
+  word-break: break-word;
+  text-align: center;
+}
+
+.de-price {
+  color: #777777;
+  font-size: 6px;
+  font-family: system-ui, "Helvetica Neue", Helvetica, Arial, sans-serif;
+  text-align: center;
+}
+
+/* ── Corner tiles: reset writing-mode ── */
+.de-corner .de-body {
+  writing-mode: initial;
+  transform: none;
+  color: #e0d8c8;
+}
+
+.de-corner .de-name {
+  font-size: 6px;
+  text-align: center;
+  color: #d4cfc7;
+}
+
+/* ══════════════════════════════════════════════════
+   DEV BADGE — house count / hotel / mortgage
+   ══════════════════════════════════════════════════ */
+
+.de-dev {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  z-index: 5;
+  font-size: 7px;
+  font-weight: 900;
+  font-family: system-ui, "Helvetica Neue", sans-serif;
+  color: #f0ece4;
+  background: #1c1c1c;
+  border: 1px solid #3a3a3a;
+  border-radius: 2px;
+  padding: 1px 3px;
+  line-height: 1;
+}
+
+/* ══════════════════════════════════════════════════
+   PLAYER TOKENS
+   ══════════════════════════════════════════════════ */
+
+.de-tokens {
+  position: absolute;
+  bottom: 2px;
+  right: 2px;
+  z-index: 10;
+  display: flex;
+  flex-wrap: wrap-reverse;
+  gap: 2px;
+  justify-content: flex-end;
+  max-width: 90%;
+}
+
+.de-token {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  font-size: 7px;
+  font-weight: 700;
+  font-family: system-ui, "Helvetica Neue", sans-serif;
+  color: #ffffff;
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  flex-shrink: 0;
+}
+
+/* ══════════════════════════════════════════════════
+   PENDING ACTION — sharp accent outline
+   ══════════════════════════════════════════════════ */
+
+.de-pending {
+  outline: 2px solid #ff4444;
+  outline-offset: -1px;
+  z-index: 1;
+}
+
+/* ══════════════════════════════════════════════════
+   CENTER PANEL
+   ══════════════════════════════════════════════════ */
+
+.de-center {
+  grid-row: 2 / 13;
+  grid-column: 2 / 13;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  background: #0a0a0a;
+  color: #f0ece4;
+  border: 1px solid #1e1e1e;
+}
+
+.de-title {
+  font-size: clamp(14px, 2.4vw, 32px);
+  font-weight: 800;
+  font-family: system-ui, "Helvetica Neue", Helvetica, Arial, sans-serif;
+  color: #f0ece4;
+  letter-spacing: 0.04em;
+  text-align: center;
+  border-bottom: 1px solid #2e2e2e;
+  padding-bottom: 8px;
+}
+
+.de-dice {
+  font-size: clamp(13px, 2vw, 26px);
+  font-weight: 600;
+  font-family: system-ui, "Helvetica Neue", sans-serif;
+  color: #888;
+  letter-spacing: 0.12em;
+}
+
+.de-players {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  align-items: flex-start;
+  min-width: 0;
+}
+
+.de-prow {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: clamp(9px, 1.1vw, 13px);
+  font-family: system-ui, "Helvetica Neue", sans-serif;
+  color: #c8c4bc;
+}
+
+.de-dot {
+  display: inline-block;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+}

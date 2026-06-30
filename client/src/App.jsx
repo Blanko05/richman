@@ -6,6 +6,7 @@ import CharacterSelect from "./components/CharacterSelect";
 import Board from "./components/Board";
 import Hud from "./components/Hud";
 import PlayerCard from "./components/PlayerCard";
+import Log from "./components/Log";
 import "./App.css";
 
 function App() {
@@ -90,10 +91,14 @@ function App() {
   }
 
   const me = state.players.find((p) => p.id === myId);
+  const isMyTurn = state.players[state.turnIndex]?.id === myId;
 
   return (
     <div className="game-screen">
-      <PlayerCard player={me} />
+      <div className="left-column">
+        <PlayerCard player={me} isMyTurn={isMyTurn} pendingAction={state.pendingAction} />
+        <Log entries={state.log} />
+      </div>
       <Board
         board={state.board}
         ownership={state.ownership}

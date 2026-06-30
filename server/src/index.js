@@ -151,6 +151,14 @@ io.on("connection", (socket) => {
     if (result.ok) broadcastState(room.code);
   });
 
+  socket.on("useAbility", ({ abilityId }, cb) => {
+    const room = getRoom(socket);
+    if (!room) return cb?.({ error: "Room not found" });
+    const result = room.useAbility(getPlayerId(socket), abilityId);
+    if (result.ok) broadcastState(room.code);
+    cb?.(result);
+  });
+
   socket.on("rollDice", () => {
     const room = getRoom(socket);
     if (!room) return;

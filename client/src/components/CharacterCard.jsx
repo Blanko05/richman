@@ -42,16 +42,18 @@ export default function CharacterCard({ char, takenBy, isMe, onSelect, playerBal
           <div className="char-card-abilities">
             {char.passive && (
               <div className="char-ability">
-                <span className="char-ability-tag">Passive</span>
+                <span className="char-ability-tag">سلبية</span>
                 <p>{char.passive}</p>
               </div>
             )}
-            {char.active && (
-              <div className="char-ability">
-                <span className="char-ability-tag char-ability-tag-active">Active</span>
-                <p>{char.active}</p>
+            {char.actives?.map((ability) => (
+              <div className="char-ability" key={ability.id}>
+                <span className="char-ability-tag char-ability-tag-active">
+                  فعّالة — {ability.label} ({ability.cooldownTurns} جولات)
+                </span>
+                <p>{ability.text}</p>
               </div>
-            )}
+            ))}
           </div>
           {isMe ? (
             <button className="char-select-btn" onClick={handleSelect}>

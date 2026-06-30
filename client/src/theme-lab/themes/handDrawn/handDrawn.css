@@ -1,0 +1,266 @@
+/* ============================================================
+   Warm Terracotta / Arabic Bazaar theme
+   All rules scoped under .tc-* so they never leak outside
+   the theme-lab sandbox.
+   ============================================================ */
+
+/* ── Root wrapper: warm sandy outer border ── */
+.tc-root {
+  background: #c8924a;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 0;
+  padding: 8px;
+  box-sizing: border-box;
+}
+
+/* ── Board grid ── */
+.tc-board {
+  background: #d4a96a;
+  border: 4px solid #8b5e2a;
+  border-radius: 8px;
+  gap: 3px;
+  box-sizing: border-box;
+  padding: 3px;
+}
+
+/* ── Individual tile ── */
+.tc-tile {
+  position: relative;
+  background: #f5e8d0;
+  border: 1.5px solid #c4a06a;
+  border-radius: 4px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  box-sizing: border-box;
+  min-width: 0;
+  min-height: 0;
+}
+
+/* ── Color band — always on the OUTER edge ── */
+.tc-side-top .tc-band {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 30%;
+  border-radius: 3px 3px 0 0;
+}
+.tc-side-right .tc-band {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 30%;
+  border-radius: 0 3px 3px 0;
+}
+.tc-side-bottom .tc-band {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 30%;
+  border-radius: 0 0 3px 3px;
+}
+.tc-side-left .tc-band {
+  position: absolute;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  width: 30%;
+  border-radius: 3px 0 0 3px;
+}
+/* Corners: no band (no group) */
+
+/* ── Owner bar — always on the INNER edge ── */
+.tc-side-top .tc-owner-bar {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 5px;
+}
+.tc-side-right .tc-owner-bar {
+  position: absolute;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  width: 5px;
+}
+.tc-side-bottom .tc-owner-bar {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 5px;
+}
+.tc-side-left .tc-owner-bar {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 5px;
+}
+
+/* ── Tile body: name + price ── */
+.tc-body {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 2px;
+  overflow: hidden;
+  min-height: 0;
+  min-width: 0;
+}
+
+/* REQUIRED side-tile text rotation — DO NOT REMOVE */
+.tc-side-left .tc-body {
+  writing-mode: vertical-lr;
+  transform: rotate(180deg);
+}
+.tc-side-right .tc-body {
+  writing-mode: vertical-rl;
+}
+.tc-corner .tc-body {
+  writing-mode: initial;
+  transform: none;
+}
+
+/* ── Tile text ── */
+.tc-name {
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: 7px;
+  font-weight: 700;
+  color: #3a2010;
+  line-height: 1.15;
+  word-break: break-word;
+  text-align: center;
+}
+
+.tc-price {
+  font-size: 6px;
+  color: #7a5030;
+  font-family: Georgia, "Times New Roman", serif;
+  text-align: center;
+}
+
+/* ── Development indicator (houses / hotel / mortgaged) ── */
+.tc-dev {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  font-size: 7px;
+  font-weight: 800;
+  color: #5a3010;
+  line-height: 1;
+  z-index: 3;
+}
+
+/* ── Player tokens ── */
+.tc-tokens {
+  position: absolute;
+  bottom: 6px;
+  left: 0;
+  right: 0;
+  display: flex;
+  justify-content: center;
+  gap: 2px;
+  flex-wrap: wrap;
+  z-index: 4;
+}
+
+.tc-token {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  color: #fff;
+  font-size: 7px;
+  font-weight: 800;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(0, 0, 0, 0.3);
+  text-shadow: 0 1px 1px rgba(0, 0, 0, 0.5);
+  flex-shrink: 0;
+}
+
+/* ── Pending-action highlight ── */
+.tc-pending {
+  outline: 2px solid #e55;
+  outline-offset: -2px;
+  z-index: 1;
+}
+
+/* ── Center panel ── */
+.tc-center {
+  grid-row: 2 / 13;
+  grid-column: 2 / 13;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  background: #c8924a;
+  border-radius: 4px;
+  margin: 3px;
+  overflow: hidden;
+}
+
+.tc-title {
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: clamp(14px, 3vmin, 28px);
+  font-weight: 700;
+  color: #3a2010;
+  text-align: center;
+  letter-spacing: 0.03em;
+  text-shadow: 0 1px 2px rgba(255, 220, 160, 0.5);
+}
+
+.tc-dice {
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: clamp(11px, 2.2vmin, 20px);
+  font-weight: 700;
+  color: #5a3010;
+  background: #f5e8d0;
+  border: 2px solid #8b5e2a;
+  border-radius: 6px;
+  padding: 4px 12px;
+  letter-spacing: 0.05em;
+}
+
+.tc-players {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  align-items: flex-start;
+}
+
+.tc-prow {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: clamp(9px, 1.6vmin, 14px);
+  color: #3a2010;
+  background: rgba(245, 232, 208, 0.6);
+  border-radius: 4px;
+  padding: 2px 8px;
+}
+
+.tc-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  border: 1.5px solid rgba(0, 0, 0, 0.3);
+  flex-shrink: 0;
+}
+
+/* ── Corner tiles: slightly larger text ── */
+.tc-corner .tc-name {
+  font-size: 6.5px;
+  line-height: 1.1;
+}

@@ -27,14 +27,15 @@
   --danger: #a3291f;
   --good: #2f6b3a;
 
-  --g-copper: #b5651d;
-  --g-teal: #128277;
-  --g-violet: #6f2c91;
-  --g-amber: #d68910;
-  --g-crimson: #a3291f;
-  --g-azure: #1f618d;
-  --g-jade: #1e8449;
-  --g-obsidian: #2c2620;
+  --g-pink: #d63a86;
+  --g-blueTop: #1f618d;
+  --g-olive: #5a5a1a;
+  --g-salmonRight: #c0392b;
+  --g-goldenrod: #966f08;
+  --g-greenBottom: #1e8449;
+  --g-violetBottom: #6f2c91;
+  --g-salmonLeft: #c2756f;
+  --g-tealLeft: #128277;
 
   font: 16px/1.45 "Arvo", Georgia, serif;
   color: var(--text);

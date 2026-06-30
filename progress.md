@@ -9,6 +9,475 @@ in the same pass.
 
 ---
 
+## Pass 20 — 2026-06-30 — Board/layout visual overhaul: viewport-fit, deed-card tiles, clearer ownership
+
+**Goal:** direct visual feedback from a live screenshot after Pass 19: the
+page layout was cramped and inconsistent (an oversized player card,
+mismatched spacing, board requiring a scroll to see fully), the board
+itself read as small/cluttered, ownership wasn't legible at a glance, and
+player position tokens were tiny dots easy to miss. Also an explicit
+reference image of a real Monopoly title-deed card (colored band + name +
+price) as the target look for property tiles, replacing the previous flat
+solid-colored tile.
+
+**What was done:**
+- `client/src/App.jsx` + new `client/src/components/Log.jsx`: the log feed
+  moved out of `Hud.jsx` into its own component, now rendered in a new
+  `.left-column` wrapper stacked under `PlayerCard` instead of living in
+  the right-hand HUD column — directly per the ask ("cards take their
+  space at the left side but make space for the log underneath it").
+- `App.css` layout: `.game-screen` changed from `min-height: 100vh` (could
+  grow past the viewport, forcing a page scroll) to a fixed `height: 100vh`
+  with `overflow: hidden`; `.hud` and the new `.left-column`/`.log` each
+  scroll *internally* now instead of growing the page. `.player-card` lost
+  its `position: sticky` + fixed `min-height: 520px` (the cause of the
+  oversized portrait column in the screenshot) in favor of `height:
+  clamp(260px, 36vh, 380px)` so it takes a sensible, viewport-scaled chunk
+  of the left column and leaves the rest to the log.
+- `.board` resizing: replaced the flat `max-width: 1180px` with `width:
+  min(1180px, calc(100vw - 650px), calc(100vh - 48px))` — since the board
+  is a square (`aspect-ratio: 1`), capping its width by *both* a
+  horizontal budget (viewport width minus the two side columns) and a
+  vertical budget (viewport height minus page padding) guarantees the
+  whole board always fits on screen with no scrolling, on any reasonably
+  -sized window, rather than only ever being width-constrained.
+- **Tile redesign, modeled directly on a real Monopoly title-deed card**
+  (per the user's reference image): `Board.jsx`'s property tiles now
+  render a `.tile-band` (solid group color, ~⅓ of the tile's height, top
+  -aligned) above a `.tile-body` (plain cream background, tile name, price)
+  — replacing the old single flat-colored tile with white text. Special
+  tiles (corners, stations, tax, treasure, luck) keep their existing
+  icon-only treatment, just re-wrapped inside the same `.tile-body`
+  structure for layout consistency.
+- **Ownership visibility, the main complaint ("can't tell who owns
+  what")**: replaced the old tiny top-right corner badge with a
+  full-width colored strip (`.tile-owner-strip`) along the bottom edge of
+  every owned tile, filled with the owner's actual player color — visible
+  at a glance across the whole board, not just on close inspection. House
+  -count/mortgaged state moved to its own small corner badge
+  (`.tile-dev-badge`, only rendered when there's actually something to
+  show — no more empty badges cluttering unbuilt-on tiles).
+- **Player token visibility, the other half of that complaint**: tokens
+  grew from plain 11px color dots to 14px circles showing the player's
+  first initial in bold white text, so it's possible to tell *which*
+  player is on a tile without hovering for the tooltip.
+- Removed now-dead CSS (`.tile-colored`, `.tile-group-*` selector,
+  `.tile-owner`/`.tile-owner-mortgaged`/`.house-count`) left over from the
+  pre-redesign tile markup.
+- `.board-center h2` (the "Monoboly عرب" title) font-size changed from a
+  flat `54px` to `clamp(28px, 4vw, 54px)` so it scales down gracefully on
+  a height-constrained board instead of overflowing its dark backdrop.
+
+**Why these calls:**
+- Fixed-budget `min()` sizing for the board over a flat `max-width`: a
+  flat max-width only ever protects against the board being *too wide* —
+  it does nothing about a tall-but-narrow viewport where the real
+  constraint is height, which is exactly the "needs a scroll" bug being
+  fixed. Combining a width budget and a height budget in one `min()` is
+  the standard CSS technique for "fit the biggest square that fits both
+  dimensions" and needed no JS/ResizeObserver to get right.
+- A full-width owner strip over a bigger/bolder corner badge: a strip
+  spanning the entire tile edge is legible at a glance across the whole
+  board from a normal viewing distance/zoom level; a corner badge, no
+  matter how large, still requires looking at each tile individually to
+  notice it's there at all.
+- Deed-card style (band-then-body) over keeping the flat colored tile:
+  this was the user's own explicit reference image, not a judgment call —
+  implemented to match it directly rather than offering a variation.
+- Internal scrolling for `.hud`/`.log` rather than capping their content
+  or hiding overflow entirely: the right-hand panel legitimately has more
+  content than fits in some window sizes (Trade/Auction panels can both be
+  open at once); scrolling *that one column* internally preserves "the
+  whole board is always visible" without losing access to any control.
+
+**Known gaps left for later:** the `min(100vw - 650px, ...)` budget for
+the board's horizontal space hardcodes the sidebar widths (230px + 340px +
+gaps/padding) rather than reading them live — if either sidebar's width
+ever changes, this constant needs a matching update, same kind of
+hand-tuned-constant tradeoff as the dice animation's tuning values from
+Pass 16. No responsive/mobile layout pass — the three-column grid assumes
+a desktop-width window; a narrow viewport will compress the board further
+via the same `min()` rather than reflowing to a stacked layout. The
+general HUD button/panel spacing inside the right column wasn't audited
+beyond making the column scroll internally — if specific elements in
+there still look inconsistent, that's a separate, more granular pass.
+
+**State at end of pass:** verified via `npx vite build` (clean build, no
+JSX/CSS errors) and the server's full `npm test` (45/45, unaffected by a
+client-only change) — **not** verified with an actual rendered screenshot,
+since the browser automation tool wasn't reachable in this session; the
+user should refresh and confirm the layout/tiles look right before this is
+considered fully done. `systemDesign.md` not yet updated for this pass
+(pending visual confirmation first, given how much of this is "does it
+look right" rather than "is the logic correct").
+
+---
+
+## Pass 19 — 2026-06-30 — Ability card UI polish: correct text, working cooldowns, activate button
+
+**Goal:** explicit first step toward implementing character abilities —
+"before anything, fix the card UI" — get the character cards (both the
+pre-game selection grid and the in-game tracker) showing the *correct*
+passive + active ability text from the new `characters.md` spec, and give
+the in-game card a real, working cooldown display with an activate button,
+ahead of building any actual ability *effects*. Caught a real bug from
+Pass 18 in the process: `client/src/data/characters.js` had only been
+updated to swap in clean generic names, not to actually match the new
+spec's shape — every character in the new design has *both* a passive and
+at least one active (Kingpin has two), but the rewritten data file had
+kept the old D/Z/Y/H/SD/SE pattern of exactly one ability per character,
+silently dropping content (e.g. the Don's Barricade active, the Enforcer's
+Curse active and holding-pen drawback, the Wrecker's bank-bounty passive).
+
+**What was done:**
+- `server/src/game/characters.js`: added `ABILITIES` — `characterId ->
+  [{ id, cooldownTurns }]`, one entry per active ability (two for
+  `kingpin`). For the two abilities whose real cooldown formula depends on
+  what's actually destroyed/stolen (Wrecker's Detonate, Fixer's Heist),
+  `cooldownTurns` is the documented minimum/baseline, used until those
+  effects (and therefore the real formula) exist.
+- `server/src/game/Room.js`: added `player.abilityCooldowns` (`abilityId ->
+  turns remaining`, default empty). New `Room.useAbility(playerId,
+  abilityId)` — gated like a turn action (current player only, no
+  `pendingAction` open, same reasoning as build/roll rather than trading:
+  these are board-altering powers, not a side negotiation), validates the
+  ability actually belongs to that player's `characterId` against
+  `ABILITIES`, rejects if still on cooldown with the turns remaining in the
+  error message, otherwise sets the cooldown and logs the activation.
+  **Deliberately stops there — no actual per-character effect is applied
+  yet** (no seizing, no demolishing, no rent skimming); this is scaffolding
+  for the UI, not the ability-implementation pass itself. `endTurn()`
+  decrements every cooldown on the *finishing* player by exactly one,
+  matching `characters.md`'s "counted in their own elapsed turns"
+  convention (same convention the old pre-redesign Y/Seizer ability used).
+  Both new fields are plain data on the existing player object, so
+  `toState()`/`toSnapshot()`/`fromSnapshot()` needed no changes — they
+  already spread the whole player object through.
+- `server/src/index.js`: added the `useAbility` socket event, same thin
+  wrapper-plus-ack-plus-broadcast pattern as every other action.
+- `server/test/abilities.test.js` (new): 5 tests covering the scaffolding
+  — wrong-character-for-ability rejection, not-your-turn rejection,
+  cooldown starts and blocks a second use, decrements by exactly one per
+  the *owner's* own turn ending (not anyone else's), and Kingpin's two
+  actives recharge independently of each other.
+- `client/src/data/characters.js` **rewritten to actually match
+  `characters.md`** (the gap described above): every character now has a
+  `passive` string plus an `actives[]` array (`{ id, label, cooldownTurns,
+  text }`), with `id`/`cooldownTurns` matching the server's `ABILITIES`
+  registry exactly. Don and Enforcer's previously-dropped actives are back
+  (Barricade, Curse — including the Enforcer's "can't pay to leave the
+  Holding Pen early" drawback folded into the Curse description), Wrecker
+  gained back its passive (the $50 bank bounty on any demolish/mortgage),
+  Kingpin now lists both Flank Seizure and Hostile Takeover.
+- `client/src/components/CharacterCard.jsx` (pre-game selection card):
+  back face now renders the passive block plus one block per `actives[]`
+  entry (label + cooldown length in the tag, full text below) instead of
+  the old single passive/active strings.
+- `client/src/components/PlayerCard.jsx` (in-game card): same back-face
+  treatment as `CharacterCard`, but the front face's previously-empty
+  `.player-card-tracker` now shows one row per active ability — "جاهزة"
+  (ready) or "`N` جولات" (turns remaining) read live from
+  `player.abilityCooldowns`, plus a "تفعيل" (activate) button that emits
+  `useAbility`. The button is disabled unless it's actually the viewer's
+  turn and no `pendingAction` is open (mirroring the server's own guards
+  client-side, server still authoritative) and the ability is off
+  cooldown; clicking it calls `e.stopPropagation()` so it doesn't also
+  flip the card. `App.jsx` threads `isMyTurn` (derived from
+  `state.players[state.turnIndex]`) and `state.pendingAction` into
+  `PlayerCard` for this.
+- `client/src/App.css`: new styles for `.ability-tracker-row` (label +
+  status pill + activate button) inside `.player-card-tracker`, plus
+  ready/charging color states (`--good` green vs. a muted gray) for the
+  status pill.
+
+**Why these calls:**
+- Built the cooldown/activate plumbing as honest scaffolding (logs the
+  activation, starts a real cooldown, but applies no game effect) rather
+  than either a static mockup or trying to implement all 7 distinct
+  effects (6 characters, Kingpin has two) in the same pass: the explicit
+  ask was specifically "polish the cards" as a step *before* "how we
+  implement the abilities" — building working cooldown state now means the
+  next pass only has to plug each effect into an already-correct
+  UI/data flow, not retrofit cooldown tracking onto 7 different mechanics
+  built in isolation.
+- Gated `useAbility` to the player's own turn with no open `pendingAction`,
+  matching roll/build rather than trading's "anytime, any active player"
+  model: every one of these abilities directly alters board/player state
+  in ways a roll or build does (seize a tile, demolish a building, redirect
+  income) — that's a different category from trading's side-negotiation
+  model, where the precedent for "not turn-gated" doesn't really apply.
+  Flagged as a default judgment call in `systemDesign.md`, not a spec
+  requirement — `characters.md` doesn't actually say.
+- Fixed the Pass 18 data-shape gap (one ability instead of passive+active)
+  as part of this pass rather than filing it as a separate bug: it's
+  exactly the "update them with their correct abilities" the user asked
+  for here, and leaving it broken would have meant `characters.md`'s actual
+  design — which explicitly gives every character both a passive and an
+  active — still wasn't reflected anywhere in the running app.
+- A real server test file for the scaffolding (not a write-then-delete
+  throwaway like most exploratory checks in this project) since `useAbility`
+  is permanent engine surface going forward, same reasoning as the Pass 15
+  decision to build a kept test suite in the first place.
+
+**Known gaps left for later:** no actual ability *effects* yet — this pass
+is exactly "the cards are right and the button works," not "abilities do
+anything." No target-selection UI for any ability (which tile, which
+player, which ability to steal) — needed before Detonate/Heist's real
+variable cooldown formulas can be computed, since both depend on what's
+targeted. No UI showing *other* players' cooldowns (data's already in
+`state.players[]`, just not surfaced — each `PlayerCard` only renders the
+viewer's own). Passive abilities have zero code anywhere yet.
+
+**State at end of pass:** `npm test` in `server/` passes all 45 tests (40
+prior + 5 new in `abilities.test.js`). Both dev servers (already running
+from the prior pass) picked up every change live via their respective
+file-watchers; no crash, no restart issues. `systemDesign.md` updated in
+place — new `ABILITIES` description in §2.1, a new "Character abilities"
+subsection in §2.3, a new wire-protocol row, corrected `CharacterCard.jsx`/
+`PlayerCard.jsx` descriptions (including fixing a pre-existing inaccuracy
+that claimed `PlayerCard` reuses the `CharacterCard` component, which it
+never did), and a full rewrite of the abilities-related §6 gaps to reflect
+what's actually built vs. still missing.
+
+---
+
+## Pass 18 — 2026-06-30 — Generic character identities (open-source cleanup) + Arabic card text
+
+**Goal:** two follow-ups from the same session as Pass 17's board rewrite.
+First, the user noticed the Surprise/Treasure card decks (`cards.js`) were
+still English text from Pass 1, sitting oddly next to a now fully-Arabic
+board — translated. Second, and bigger: `characters.md` had been
+completely rewritten by the user into a new crime-boss archetype design
+(Don/Enforcer/Wrecker/Kingpin/Conductor/Fixer), replacing the old D/Z/Y/H/
+SD/SE spec that was *named after real political/local figures as jokes*
+(دروبي, هرم الزرقا, Big Yahu, Hitler, صدام حسين, السيسي) — already wired
+into the character-selection system built in Pass 16. The user wants to
+open-source this repo later (as a separate clean copy, not a history
+rewrite of this one) and explicitly does not want any mention of those
+real figures anywhere in the code or assets, while keeping the option to
+swap in a friend-group-specific skin again later without re-touching the
+engine.
+
+**What was done (Arabic cards):** `server/src/game/cards.js`'s
+`SURPRISE_CARDS`/`TREASURE_CARDS` `text` fields translated to Arabic
+in place — `effect` objects (the actual game logic) untouched. Two
+`cardMove.test.js` assertions that checked exact English card text
+(`"Move back 3 spaces."`, used as a `lastCard.text` equality check)
+updated to the new Arabic strings; no other test depended on card text.
+
+**What was done (generic character identities):**
+- `server/src/game/characters.js`: `CHARACTER_IDS` renamed from the
+  joke-derived `D/Z/Y/H/SD/SE` to neutral archetype slugs — `don`,
+  `enforcer`, `wrecker`, `kingpin`, `conductor`, `fixer` — matching
+  `characters.md`'s new ability spec 1:1. `CHARACTER_NAMES` replaced with
+  clean generic Arabic labels (`الدون`, `المنفّذ`, `الهدّام`, `العقل
+  المدبر`, `الكمساري`, `المُصلح`) with zero real-world references. Added a
+  comment documenting that this file is deliberately the *only* thing the
+  engine knows about character identity, and stays generic by design.
+- `client/src/data/characters.js`: `CHARACTERS` array rewritten end to end
+  — new ids, new clean Arabic names/descriptions/passive/active flavor
+  text (still placeholder wording, like before, just no longer referencing
+  real people), and portrait paths repointed at the new asset folders.
+- `client/public/characters/{D,Z,Y,H,SD,SE}/` (the actual political-figure
+  photos) deleted outright — not archived or gitignored-but-kept, since the
+  goal is zero mention/trace in this codebase going forward, not just in
+  the UI. Replaced with `client/public/characters/{don,enforcer,wrecker,
+  kingpin,conductor,fixer}/v1.svg` + `v2.svg`: simple original flat-icon
+  placeholder portraits (fedora for Don, fist for Enforcer, wrecking ball
+  for Wrecker, chess king for Kingpin, train for Conductor, wrench for
+  Fixer) on a circular badge, hand-drawn as plain SVG shapes — not real
+  photos, not sourced from anywhere, safe to keep in an open-sourced copy.
+  `v2` keeps the existing balance-gated "richer portrait" swap feature
+  (gold background + a small sparkle accent) rather than dropping it.
+- No component changes needed — `CharacterCard.jsx`/`CharacterSelect.jsx`/
+  `PlayerCard.jsx` all already consume `CHARACTERS`/`CHARACTER_IDS`
+  generically (iterate by id, look up by id), with zero hardcoded
+  references to the old letter codes anywhere outside the two data files
+  that got rewritten. Confirmed via a repo-wide grep before starting, which
+  is also what made this a same-session, low-risk rename rather than a
+  bigger refactor.
+
+**Why these calls:**
+- Split identity into two layers (`server/.../characters.js` = generic
+  engine-facing id + label, `client/src/data/characters.js` = the
+  swappable "skin": name/description/portrait) rather than just renaming
+  in place: the explicit ask was "easily interchangeable" for a future
+  friend-group skin — keeping the skin entirely client-side and untouched
+  by any future ability logic (which will key off the server-side
+  `CHARACTER_IDS`, never a display name) means swapping skins later is a
+  matter of replacing one data file and a folder of images, not touching
+  `Room.js` or any ability code that gets built on top of these ids.
+- Deleted the old photos rather than leaving them gitignored-but-present:
+  the user's stated goal is no trace in the code/assets at all, not just
+  hiding them from a build — gitignoring would still leave them sitting on
+  disk in this checkout, which doesn't satisfy "I don't even want any
+  mention of them in the code."
+- Hand-drawn original SVG icons instead of trying to source generic stock
+  photography: there's no image-generation or asset-sourcing tool
+  available in this session, and simple flat vector icons are unambiguously
+  original (not copied from any real source), match the game's existing
+  flat/parchment visual style, and are trivial to swap out later — exactly
+  matching "doesn't affect how the game plays, only what they look like."
+- Did **not** attempt to rewrite git history to scrub the old names/photos
+  from already-pushed commits: explicitly discussed and deferred — the
+  user's plan is to build the open-source version as a separate, fresh
+  public repo later rather than sanitize this one's history, so the
+  current pass only needed to make the *current* files clean, not erase
+  the past.
+
+**Known gaps left for later:** the 5 rooms currently persisted in
+`server/data/rooms.json` (gitignored, local-only) still reference the old
+`D/Z/Y/H/SD/SE` ids in their `characterSelections`/`characterId` fields —
+confirmed harmless on restart (no crash, no validation runs against stale
+snapshot data), but those old ids won't match anything in the current
+`CHARACTER_IDS` if anyone tried to act on them; not worth a migration for
+what's almost certainly finished/abandoned test rooms. The top-level
+(gitignored) `characters/` folder — the original source images Pass 16
+copied portraits in from — still has the real photos sitting on disk
+locally; not deleted, since it's already outside version control and
+outside this pass's stated scope (code/assets *in the repo*), but worth
+the user's own awareness if "no trace anywhere on this machine" was the
+actual bar rather than "no trace in the repo." Character *abilities* are
+still entirely unimplemented — this pass was identity/asset cleanup only,
+ability wiring into `Room.js` against the new `characters.md` spec is the
+next piece of work.
+
+**State at end of pass:** `npm test` in `server/` passes all 40 tests
+(2 assertions updated for the new Arabic card text, nothing else touched).
+Both dev servers were already running from the prior verification pass;
+confirmed live after each file change via the server's `--watch` auto
+-restart (clean restart, still restores its 5 saved rooms with no crash)
+and a direct `curl` check that the new SVG portraits serve correctly
+through Vite. `systemDesign.md` updated in place — `game/characters.js`'s
+description rewritten for the new ids/names plus a new paragraph
+explaining the identity/skin split as a deliberate architectural decision.
+
+---
+
+## Pass 17 — 2026-06-30 — Board redesign: 32 → 48 tiles, new Arabic layout
+
+**Goal:** Pass 16 widened `.board` "to make room for new content" but left
+it visually empty. This pass fills that room with what the user actually
+wanted: a brand-new 48-tile board (12 per side instead of 8) with a real
+Arabic tile layout the user supplied as a screenshot + a corrected text
+dump, replacing the old 32-tile English-named board entirely. Spent most of
+this pass in back-and-forth confirming the exact grouping/typing of every
+tile before writing any code, since a wrong read would mean redoing the
+whole rewrite — see the Q&A in this session's transcript for the full
+derivation; only the final confirmed shape is recorded here.
+
+**What was done:**
+- `server/src/game/board.js` fully rewritten: 48 tiles (ids 0–47), still a
+  pure-data module with the same shape (`TILE_TYPES`, `BOARD[]`,
+  `propertiesByGroup`). Ids increase **clockwise from id 0** (`البداية`,
+  top-left corner) — rightward across the top, down the right side, left
+  across the bottom, up the left side back to Start. Corners: 0 `البداية`
+  (start), 12 `في الحبس مظاليم` (holding/jail), 24 `استراحة محارب` (rest/
+  free-parking), 36 `ميل عأحبابك بالمهجع` (go-to-holding).
+- **9 property color groups** (up from 8), sizes 2–4 each, 26 property
+  tiles total: `pink` (سحاب/رصيفة), `blueTop` (مدينة الكويت/الأحمدي/الجزر
+  الكويتية), `olive` (داقستان/موسكو), `salmonRight` (اغوار الشمال/نهر
+  الميراندا/اغوار الجنوب), `goldenrod` (ميونخ/فرانكفورت/بيرلين —
+  user explicitly merged بيرلين into this group rather than leaving it
+  solo, correcting an earlier guess), `greenBottom` (نيتانيا/حيفا/تل ابيب),
+  `violetBottom` (سيناء/قاهرة/الاسكندرية), `salmonLeft` (بابل/اربيل/كربلاء/
+  بغداد), `tealLeft` (الطفيلة/السلط/اربد). Prices climb $60 → $420 with
+  distance from Start, rents/house-prices scaled proportionally from the
+  old 8-group curve but re-tuned for the wider board — confirmed with the
+  user as a full pricing table before writing any code.
+- **6 station tiles** (up from 4) — flat $150, rent now scales to
+  `[25, 50, 75, 100, 150, 200]` for owning 1–6 (old array only had 4
+  entries). **3 tax tiles** ($100/$150/$200 by board position, up from a
+  single flat $100). **4 treasure-draw tiles** — confirmed by the user that
+  `صندوق الحج`/`صندوق المرأة`/`جمعية دار المسنين`/`جمعية الديوان` are all
+  the same `treasure` tile type despite different in-fiction names, not
+  four more property names as initially misread from the screenshot's pixel
+  colors. **3 `surprise`-type luck tiles**, all literally named `الحظ`.
+  **2 new mid-edge `rest`-type "safety" tiles** (`عليكم الأمان`) — confirmed
+  as plain no-op safe spaces, same mechanic as the corner rest tile.
+- No utility tiles in the new layout (none of the 48 names map to one) —
+  `TILE_TYPES.UTILITY` and `calcRent`'s utility branch are left in place as
+  generic engine support, just unexercised by this board's data.
+- `client/src/components/Board.jsx`: `getGridPos` rewritten for a 13×13
+  grid (was 9×9) — same clockwise-from-top-left convention as the new
+  `board.js` ids, four formula branches one per side.
+- `client/src/index.css`: the 8 `--g-<group>` color variables replaced with
+  9 new ones matching the new group names; removed the now-orphaned
+  `.tile-group-amber` dark-text override (no remaining group needs it).
+- `client/src/App.css`: `.board`'s grid template widened from 8+2 corner
+  columns/rows to 12+2 (13×13), `max-width` raised 900px → 1180px to keep
+  individual tiles legible with 50% more tiles per side; tile/icon/badge/
+  token font sizes and dimensions shrunk slightly (e.g. tile font 9.5px →
+  8.5px, icon-badge 22px → 18px) to fit the now-smaller per-tile area;
+  `.board-center`'s grid span widened from `2/9` to `2/13` to match.
+- **Found and fixed a real bug while updating tests, not part of the
+  planned rewrite:** `Room.sendToHolding` hardcoded `player.position = 8` —
+  tile 8's id in the *old* 32-tile board happened to be the Holding Pen
+  tile, but that's now tile 12. Fixed to derive it dynamically:
+  `BOARD.find((t) => t.type === TILE_TYPES.HOLDING).id`. This is exactly
+  the kind of hardcoded-assumption bug a board rewrite is likely to surface
+  — worth being deliberate about searching for more of (a `Room.js`-wide
+  grep for other bare numeric tile-id literals turned up nothing else; only
+  this one and an unrelated number-grammar helper (`n === 8` for "an 8")
+  matched).
+- `server/test/*`: 9 of the 40 existing tests broke purely because they
+  hardcoded old-board tile ids/positions in their setup (e.g. "tile 15 is
+  the tax tile" — now tile 15 is a `surprise` luck tile). Fixed by
+  re-deriving equivalent deterministic dice/position combinations against
+  the new board's actual tile types (e.g. the "rolling again without
+  doubles is rejected" test now lands on tile 4, the first tax tile, instead
+  of the old tile 15). No test's *assertions* changed, only the setup data
+  needed to reach an equivalent scenario on the new board. All 40 pass
+  again after the fix.
+
+**Why these calls:**
+- Spent the whole front half of this pass confirming the tile grouping
+  before writing code, rather than guessing from the screenshot's pixel
+  colors directly: an early read mis-grouped several tiles (treasure tiles
+  read as a third color group, بيرلين read as solo when it's actually part
+  of the goldenrod group, a blue/teal mix-up between the top and left
+  groups) — confirmed by the user's corrections matching the final
+  26-property/9-group total exactly, which wouldn't have reconciled if a
+  grouping were still wrong. Building 480+ lines of board data, two grid
+  layouts, and a CSS palette around an unconfirmed read would have meant
+  redoing all of it once a mistake surfaced later.
+- Deriving `sendToHolding`'s target tile dynamically rather than just
+  updating the hardcoded `8` to `12`: a future board change (another
+  resize, or a different corner layout) would silently reintroduce the
+  exact same bug if the position were hardcoded again — deriving it from
+  `BOARD`'s own `HOLDING`-type tile means it can never drift out of sync
+  with whatever `board.js` actually says.
+- Re-deriving test setups against equivalent new-board positions rather
+  than loosening or deleting the broken assertions: every failure was a
+  stale-fixture problem (the *behavior* being tested — bonus rolls, the
+  three-doubles rule, deferred card moves, deferred bankruptcy — is
+  unchanged by a board reshuffle), not a real regression, so the correct
+  fix was finding new tiles with the same *type* at reachable dice
+  distances, not changing what's being verified.
+
+**Known gaps left for later:** character abilities (`characters.md`) are
+still entirely unimplemented — this pass was purely the board/map work
+explicitly scoped first in this session, character ability wiring into
+`Room.js` is next. The exact hex colors for the 9 new `--g-<group>`
+variables are a reasonable approximation of the screenshot's palette, not
+pixel-matched — may need visual tuning once seen live in the browser
+(no dev server was run this pass to check — see below). `cards.js`'s
+SURPRISE_CARDS/TREASURE_CARDS text is still in English from Pass 1 and
+wasn't touched, despite the board itself now being fully Arabic-named — a
+visible mismatch the user hasn't flagged yet but is worth surfacing.
+
+**State at end of pass:** `npm test` in `server/` passes all 40 tests after
+re-deriving 9 stale test fixtures against the new board (no test assertions
+changed, only setup data). No dev server was started this pass to verify
+the new board renders correctly in the browser — purely server-side test
+verification plus manual review of the CSS grid math (4 formula branches
+checked by hand against all 4 corner ids). `systemDesign.md` updated in
+place — §2.1's board description rewritten for 48 tiles/9 groups, core-flow
+tile-count reference, and the `Board.jsx` client description's grid
+dimensions.
+
+---
+
 ## Pass 16 — 2026-06-30 — Character selection (D/Z/Y/H/SD/SE), board widening, animated dice
 
 **Goal:** the user fleshed out the 6-character design from `characters.md`

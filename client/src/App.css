@@ -64,17 +64,23 @@
   grid-template-columns: 230px 1fr 340px;
   gap: 16px;
   padding: 16px;
-  min-height: 100vh;
-  align-items: start;
+  height: 100vh;
+  align-items: stretch;
+  overflow: hidden;
+}
+
+.left-column {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-height: 0;
 }
 
 .player-card {
   perspective: 1400px;
   cursor: pointer;
-  align-self: stretch;
-  position: sticky;
-  top: 16px;
-  min-height: 520px;
+  flex-shrink: 0;
+  height: clamp(260px, 36vh, 380px);
 }
 
 .player-card-inner {
@@ -137,6 +143,63 @@
 .player-card-tracker {
   flex: 1;
   min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 12px;
+  overflow-y: auto;
+}
+
+.ability-tracker-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--panel-2);
+  border: 2px solid var(--border);
+  border-radius: 6px;
+  padding: 5px 8px;
+}
+
+.ability-tracker-label {
+  font-size: 11.5px;
+  font-weight: 700;
+  flex: 1;
+}
+
+.ability-tracker-status {
+  font-size: 9.5px;
+  font-weight: 700;
+  padding: 2px 6px;
+  border-radius: 8px;
+  white-space: nowrap;
+}
+
+.ability-ready {
+  background: var(--good);
+  color: #fff;
+}
+
+.ability-charging {
+  background: var(--border-light);
+  color: var(--text-dim);
+}
+
+.ability-activate-btn {
+  font-size: 10.5px;
+  padding: 4px 8px;
+  border-radius: 6px;
+  border: 2px solid var(--border);
+  background: var(--accent);
+  color: var(--accent-ink);
+  font-weight: 700;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.ability-activate-btn:disabled {
+  background: var(--border-light);
+  color: var(--text-dim);
+  cursor: not-allowed;
 }
 
 .player-card-name {
@@ -182,12 +245,16 @@
 
 .board {
   display: grid;
-  grid-template-columns: minmax(0, 1.6fr) repeat(7, minmax(0, 1fr)) minmax(0, 1.6fr);
-  grid-template-rows: minmax(0, 1.6fr) repeat(7, minmax(0, 1fr)) minmax(0, 1.6fr);
-  gap: 4px;
+  grid-template-columns: minmax(0, 1.5fr) repeat(11, minmax(0, 1fr)) minmax(0, 1.5fr);
+  grid-template-rows: minmax(0, 1.5fr) repeat(11, minmax(0, 1fr)) minmax(0, 1.5fr);
+  gap: 3px;
   aspect-ratio: 1;
-  max-width: 900px;
-  margin: 0 auto;
+  /* Fit the largest square that fits both the available width and the
+     available height, so the whole board is always visible with no page
+     scroll -- 1180px is just an upper cap, not a target. */
+  width: min(1180px, calc(100vw - 650px), calc(100vh - 48px));
+  align-self: center;
+  justify-self: center;
   background: var(--bg);
   border: 4px solid var(--border);
   border-radius: 10px;
@@ -197,31 +264,20 @@
 
 .tile {
   position: relative;
-  border: 2.5px solid var(--border);
-  border-radius: 7px;
-  box-shadow: 2px 2px 0 var(--border);
+  border: 1.5px solid #000;
+  border-radius: 4px;
   display: flex;
   flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 3px;
-  padding: 4px 3px;
-  font-size: 9.5px;
-  background: var(--panel-2);
+  font-size: 8px;
+  background: #f5f0dc;
   text-align: center;
+  overflow: hidden;
 }
 
 .tile-pending {
   outline: 3px solid var(--danger);
-  outline-offset: -3px;
-}
-
-.tile-colored {
-  color: var(--panel);
-}
-
-.tile-group-amber {
-  color: var(--text);
+  outline-offset: -2px;
+  z-index: 1;
 }
 
 .tile-start, .tile-rest {
@@ -234,6 +290,36 @@
   color: var(--panel);
 }
 
+/* Classic deed-card look: a solid color band across the edge of the tile
+   nearest the board's outer rim, then a plain cream body below it with the
+   name/price -- modeled directly on a real Monopoly title-deed card rather
+   than the previous flat-colored-tile style. */
+.tile-band {
+  height: 34%;
+  flex-shrink: 0;
+  border-bottom: 1.5px solid #000;
+}
+
+.tile-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  padding: 2px 3px 9px;
+  color: #1d1610;
+}
+
+.tile-start .tile-body,
+.tile-rest .tile-body,
+.tile-holding .tile-body,
+.tile-go_to_holding .tile-body {
+  padding-bottom: 2px;
+  color: inherit;
+}
+
 .tile-name {
   font-weight: 700;
   line-height: 1.1;
@@ -242,72 +328,98 @@
 }
 
 .tile-icon {
-  font-size: 16px;
+  font-size: 14px;
 }
 
 .tile-icon-lg {
-  font-size: 26px;
+  font-size: 21px;
 }
 
 .tile-icon-badge {
-  width: 22px;
-  height: 22px;
+  width: 18px;
+  height: 18px;
   border-radius: 50%;
   background: var(--panel);
-  border: 2px solid var(--border);
+  border: 1.5px solid #000;
   color: var(--text);
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 13px;
+  font-size: 11px;
   flex-shrink: 0;
 }
 
 .tile-price-badge {
-  background: var(--panel);
-  border: 2px solid var(--border);
-  border-radius: 10px;
-  padding: 1px 6px;
-  font-size: 9px;
-  font-weight: 700;
-  color: var(--text);
+  font-size: 7.5px;
+  font-weight: 800;
+  color: #1d1610;
 }
 
-.tile-owner {
+/* The main "who owns this" signal -- a solid color strip spanning the full
+   width of the tile in the owner's player color, always visible at a
+   glance rather than a small corner badge. */
+.tile-owner-strip {
   position: absolute;
-  top: 3px;
-  right: 3px;
-  width: 15px;
-  height: 15px;
-  border-radius: 4px;
-  border: 2px solid var(--border);
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 6px;
+  border-top: 1.5px solid #000;
+}
+
+.tile-dev-badge {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  min-width: 13px;
+  height: 13px;
+  padding: 0 2px;
+  border-radius: 3px;
+  border: 1.5px solid #000;
+  background: #fff;
+  color: #1d1610;
+  font-size: 8px;
+  font-weight: 800;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 9px;
-  font-weight: 700;
+  z-index: 1;
+}
+
+.tile-dev-badge-mortgaged {
+  background: var(--danger);
   color: #fff;
 }
 
 .tile-tokens {
   position: absolute;
-  bottom: 2px;
   left: 2px;
+  right: 2px;
+  bottom: 7px;
   display: flex;
   gap: 2px;
   flex-wrap: wrap;
+  justify-content: center;
 }
 
 .token {
-  width: 11px;
-  height: 11px;
+  width: 14px;
+  height: 14px;
   border-radius: 50%;
-  border: 2px solid var(--border);
+  border: 1.5px solid #000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 7.5px;
+  font-weight: 800;
+  color: #fff;
+  flex-shrink: 0;
+  text-shadow: 0 1px 1px rgba(0, 0, 0, 0.5);
 }
 
 .board-center {
-  grid-row: 2 / 9;
-  grid-column: 2 / 9;
+  grid-row: 2 / 13;
+  grid-column: 2 / 13;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -323,7 +435,7 @@
 
 .board-center h2 {
   font-family: "Marhaban Arabic", "Alfa Slab One", "Arvo", Georgia, serif;
-  font-size: 54px;
+  font-size: clamp(28px, 4vw, 54px);
   line-height: 1.1;
   letter-spacing: 2px;
   margin: 0;
@@ -416,6 +528,10 @@
   display: flex;
   flex-direction: column;
   gap: 14px;
+  height: 100%;
+  min-height: 0;
+  overflow-y: auto;
+  padding-right: 2px;
 }
 
 .hud-section {
@@ -656,8 +772,10 @@
 }
 
 .log {
-  max-height: 220px;
-  overflow-y: auto;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
 }
 
 .log ul {
@@ -669,6 +787,9 @@
   gap: 6px;
   font-size: 12px;
   color: var(--text-dim);
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
 }
 
 select {

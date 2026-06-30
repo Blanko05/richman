@@ -3,11 +3,14 @@ import Dice from "./Dice";
 
 const BIG_ICON_TYPES = ["start", "holding", "go_to_holding"];
 
+// 48 tiles, 12 per side, on a 13x13 grid. Ids increase clockwise from
+// Start (top-left): rightward across the top, down the right side,
+// leftward across the bottom, up the left side back to Start.
 function getGridPos(i) {
-  if (i <= 8) return { row: 9, col: 9 - i };
-  if (i <= 16) return { row: 9 - (i - 8), col: 1 };
-  if (i <= 24) return { row: 1, col: 1 + (i - 16) };
-  return { row: 1 + (i - 24), col: 9 };
+  if (i <= 12) return { row: 1, col: 1 + i };
+  if (i <= 24) return { row: 1 + (i - 12), col: 13 };
+  if (i <= 36) return { row: 13, col: 13 - (i - 24) };
+  return { row: 13 - (i - 36), col: 1 };
 }
 
 export default function Board({ board, ownership, players, pendingAction, lastRoll, rollSeq }) {
@@ -25,31 +28,39 @@ export default function Board({ board, ownership, players, pendingAction, lastRo
         return (
           <div
             key={tile.id}
-            className={`tile tile-${tile.type} ${tile.group ? `tile-colored tile-group-${tile.group}` : ""} ${isPending ? "tile-pending" : ""}`}
-            style={{ gridRow: pos.row, gridColumn: pos.col, background: tile.group ? `var(--g-${tile.group})` : undefined }}
+            className={`tile tile-${tile.type} ${isPending ? "tile-pending" : ""}`}
+            style={{ gridRow: pos.row, gridColumn: pos.col }}
           >
-            {Icon && isBigIcon && (
-              <div className="tile-icon tile-icon-lg">
-                <Icon />
-              </div>
-            )}
-            {Icon && !isBigIcon && (
-              <div className="tile-icon-badge">
-                <Icon />
-              </div>
-            )}
-            <div className="tile-name">{tile.name}</div>
-            {priceValue !== undefined && <div className="tile-price-badge">${priceValue}</div>}
-            {owned && (
-              <div className={`tile-owner ${owned.mortgaged ? "tile-owner-mortgaged" : ""}`} style={{ background: ownerColor }}>
-                {owned.mortgaged ? "M" : owned.houses > 0 ? <span className="house-count">{owned.houses === 5 ? "H" : owned.houses}</span> : null}
-              </div>
-            )}
-            <div className="tile-tokens">
-              {occupants.map((p) => (
-                <span key={p.id} className="token" style={{ background: p.color }} title={p.name} />
-              ))}
+            {tile.group && <div className="tile-band" style={{ background: `var(--g-${tile.group})` }} />}
+            <div className="tile-body">
+              {Icon && isBigIcon && (
+                <div className="tile-icon tile-icon-lg">
+                  <Icon />
+                </div>
+              )}
+              {Icon && !isBigIcon && (
+                <div className="tile-icon-badge">
+                  <Icon />
+                </div>
+              )}
+              <div className="tile-name">{tile.name}</div>
+              {priceValue !== undefined && <div className="tile-price-badge">${priceValue}</div>}
             </div>
+            {owned && <div className="tile-owner-strip" style={{ background: ownerColor }} />}
+            {owned && (owned.mortgaged || owned.houses > 0) && (
+              <div className={`tile-dev-badge ${owned.mortgaged ? "tile-dev-badge-mortgaged" : ""}`}>
+                {owned.mortgaged ? "M" : owned.houses === 5 ? "H" : owned.houses}
+              </div>
+            )}
+            {occupants.length > 0 && (
+              <div className="tile-tokens">
+                {occupants.map((p) => (
+                  <span key={p.id} className="token" style={{ background: p.color }} title={p.name}>
+                    {p.name?.[0]}
+                  </span>
+                ))}
+              </div>
+            )}
           </div>
         );
       })}

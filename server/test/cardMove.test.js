@@ -14,24 +14,24 @@ test("a movement card defers the move until confirmCardMove is called", () => {
   const room = makeRoom();
   after(() => cleanup(room));
   const alice = room.players[0];
-  forceTopCard(room, "surpriseDeck", "s6"); // "Move back 3 spaces."
-  alice.position = 4; // tile 7 is Surprise, 3 tiles away
+  forceTopCard(room, "surpriseDeck", "s6"); // "ارجع 3 مربعات إلى الخلف."
+  alice.position = 12; // tile 15 is Surprise (الحظ), 3 tiles away
 
   const rollResult = withDice([[2, 1]], () => room.rollDice("p0"));
 
   assert.equal(rollResult.awaitingCardMove, true);
-  assert.equal(alice.position, 7, "still sitting on the card tile -- the move hasn't happened yet");
+  assert.equal(alice.position, 15, "still sitting on the card tile -- the move hasn't happened yet");
   assert.equal(room.pendingAction.type, "awaitCardMove");
-  assert.equal(room.lastCard.text, "Move back 3 spaces.");
+  assert.equal(room.lastCard.text, "ارجع 3 مربعات إلى الخلف.");
 
   const confirmResult = room.confirmCardMove("p0");
 
   assert.deepEqual(confirmResult, { ok: true });
-  assert.equal(alice.position, 4, "moved back 3 from the card tile");
-  // Tile 4 is an unowned property (Teal Quay) in the post-board-restructure
-  // layout, so resolveTile correctly opens a fresh awaitBuy here -- the thing
-  // actually under test (the card move itself resolving once confirmed) is
-  // done; a new pendingAction for an unrelated decision is expected, not a bug.
+  assert.equal(alice.position, 12, "moved back 3 from the card tile");
+  // Tile 12 is the Holding Pen tile itself -- landing on it directly (not via
+  // go_to_holding) is just a safe visit, so resolveTile is a no-op here; the
+  // thing actually under test (the card move itself resolving once confirmed)
+  // is done.
   assert.notEqual(room.pendingAction?.type, "awaitCardMove");
 });
 
@@ -66,11 +66,11 @@ test("confirmCardMove also handles the advanceTo effect (collecting Start Plaza'
   const room = makeRoom();
   after(() => cleanup(room));
   const alice = room.players[0];
-  forceTopCard(room, "surpriseDeck", "s4"); // "Advance to Start Plaza and collect 200 coins."
-  alice.position = 4;
+  forceTopCard(room, "surpriseDeck", "s4"); // "تقدم إلى البداية واحصل على 200 عملة."
+  alice.position = 12;
   const balanceBefore = alice.balance;
 
-  withDice([[2, 1]], () => room.rollDice("p0")); // lands on tile 7, draws s4
+  withDice([[2, 1]], () => room.rollDice("p0")); // lands on tile 15 (الحظ), draws s4
   assert.equal(room.pendingAction.type, "awaitCardMove");
 
   room.confirmCardMove("p0");
@@ -85,7 +85,7 @@ test("a goToHolding card effect is NOT deferred -- it resolves immediately, not 
   after(() => cleanup(room));
   const alice = room.players[0];
   forceTopCard(room, "surpriseDeck", "s5"); // "Go directly to Holding Pen."
-  alice.position = 4;
+  alice.position = 12;
 
   withDice([[2, 1]], () => room.rollDice("p0"));
 
