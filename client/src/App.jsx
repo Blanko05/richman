@@ -3,7 +3,7 @@ import { socket } from "./socket";
 import { loadSession, saveSession, clearSession } from "./session";
 import Lobby from "./components/Lobby";
 import CharacterSelect from "./components/CharacterSelect";
-import Board from "./components/Board";
+import BoardClassic from "./components/BoardClassic";
 import Hud from "./components/Hud";
 import PlayerCard from "./components/PlayerCard";
 import Log from "./components/Log";
@@ -99,14 +99,7 @@ function App() {
         <PlayerCard player={me} isMyTurn={isMyTurn} pendingAction={state.pendingAction} />
         <Log entries={state.log} />
       </div>
-      <Board
-        board={state.board}
-        ownership={state.ownership}
-        players={state.players}
-        pendingAction={state.pendingAction}
-        lastRoll={state.lastRoll}
-        rollSeq={state.rollSeq}
-      />
+      <BoardClassic state={state} myId={myId} />
       <Hud state={state} myId={myId} onLeave={handleLeave} />
     </div>
   );
