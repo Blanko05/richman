@@ -688,12 +688,12 @@ overwritten as one JSON blob every time anything changes.
 
 **What does *not* survive a restart as-is** (see `Room.fromSnapshot` in
 §2.3 for the actual mechanics): a player who was mid-disconnect-grace
-when the snapshot was taken gets kicked on restore rather than resuming
-their countdown (there's no way to know how much of the 20 seconds was
-left, and no socket is bound to them yet anyway), and the current
+when the snapshot was taken gets a **fresh full** 20-second grace window
+on restore rather than resuming their exact countdown (there's no way to
+know how much of the original 20 seconds was left), and the current
 player's turn timer restarts at a fresh full 4 minutes rather than
-preserving the exact remaining time. Both are deliberate simplifications,
-not bugs — see §5.
+preserving the exact remaining time. Both are deliberate simplifications
+— "fresh full duration, not the exact remainder" — not bugs; see §5.
 
 **Host reassignment:** `hostId` is a `playerId`, not a socket id. If the
 host is removed (pre-start `removePlayer`, or `kickPlayer` mid-game),
@@ -1065,16 +1065,16 @@ grows much larger or tick rate increases.
   `rooms.json` file. At this game's pace that's cheap and means in-memory
   state and on-disk state are never out of sync — there's no batching
   window where a crash could lose an action that already happened.
-- **A snapshot restore treats the restart itself as the disconnect grace
-  window expiring**, for anyone who was mid-grace when the snapshot was
-  taken — there's no way to know how much of their 20 seconds was actually
-  left, so the simplest correct choice is to just kick them rather than
-  guess. The current player's turn timer similarly restarts at a fresh
-  full 4 minutes rather than trying to preserve exact remaining time —
-  tracking "how much time was left" durably would mean persisting
-  wall-clock deadlines and reasoning about clock drift across a restart,
-  for a edge case (server restarting mid-turn) that doesn't need that
-  precision.
+- **A snapshot restore gives anyone mid-disconnect-grace a fresh full
+  20-second window** rather than trying to resume their exact countdown
+  — there's no way to know how much of the original 20 seconds was
+  actually left, so "restart the window" is the simplest correct choice,
+  same as it would be for a live disconnect. The current player's turn
+  timer similarly restarts at a fresh full 4 minutes rather than trying
+  to preserve exact remaining time — tracking "how much time was left"
+  durably would mean persisting wall-clock deadlines and reasoning about
+  clock drift across a restart, for an edge case (server restarting
+  mid-turn) that doesn't need that precision.
 - **Tokens are persisted in plaintext on disk**, same as they already live
   in plaintext in memory — no new exposure introduced, just an explicit
   acknowledgment that "secret" here means "not broadcast to other
@@ -1132,12 +1132,6 @@ grows much larger or tick rate increases.
   -bidder instead of falling back to the next-highest actual bid, since
   bid history isn't tracked. In practice this just means the auction
   re-opens from scratch rather than resuming at the second-best offer.
-- A mid-disconnect-grace player loses their seat on a server restart even
-  if they would have reconnected well within their 20-second window —
-  there's no way to distinguish "the server happened to restart during my
-  grace period" from "I'm genuinely gone," so it's treated the same as the
-  window expiring. Rare in practice (restarts aren't frequent, and the
-  grace window is short), but a real edge case.
 - The current player's turn timer resets to a fresh 4 minutes on restart
   rather than preserving exact remaining time — someone who'd used 3:50 of
   their 4 minutes right before a restart gets a brand new 4:00 afterward.

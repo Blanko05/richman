@@ -20,9 +20,9 @@ implementation starts.
 
 **Passive, always on, no cost or limit.**
 
-- Holds a **30% stake** in a fixed turf zone (a designated group of tiles,
-  exact tiles TBD at implementation time). Any rent collected on tiles in
-  that zone pays D 30% of the amount on top.
+- Holds a **30% stake** in his turf zone — the `salmonRight` color group:
+  tile 13 (اغوار الشمال), tile 14 (نهر الميراندا), tile 16 (اغوار الجنوب).
+  Any rent collected on those three tiles pays D 30% of the amount on top.
 - Takes **50% of every tax payment** any other player makes, anywhere on the
   board, not just inside his turf. Paid from the bank — never an extra
   charge on the taxed player.
@@ -86,23 +86,19 @@ the table doesn't trade or get taxed.**
 
 **Passive, always on, no cost or limit.**
 
-- Claims a fixed turf zone (separate from D's, exact tiles TBD at
-  implementation time).
+- Claims a turf zone spanning the `salmonLeft` and `tealLeft` groups: tile
+  37 (بابل), 38 (اربيل), 39 (كربلاء), 41 (بغداد), 44 (الطفيلة), 45 (السلط),
+  47 (اربد). Does not overlap with D's zone (tiles 13/14/16).
 - Tracks landings on that zone across all players. Every **third landing**
   (a deterministic counter, not a random chance) triggers a **90% cut** of
   that landing's earnings to H.
 
-**Active 1 — Flank Seizure, rechargeable, 12-turn cooldown.**
-
-- Seizes the two ownable tiles immediately flanking a property H already
-  owns — the nearest ownable tile to the left and to the right along the
-  board loop. If unowned, H buys outright; if owned, H forces the trade
-  at full listed price.
-
-**Active 2 — Hostile Takeover, rechargeable, 7-turn static cooldown.**
+**Active — Hostile Takeover, rechargeable, 7-turn static cooldown.**
 
 - Takes control of any one tile for the duration of the current round only,
   then it reverts.
+
+~~Flank Seizure~~ — cut from the design. H now has a single active ability.
 
 ---
 
@@ -138,18 +134,46 @@ the table doesn't trade or get taxed.**
 - Steals another player's active ability and uses it once, on the spot, as
   if SE owned it.
 - Recharge formula: **5 turns + half of the stolen ability's own static
-  cooldown** (rounding TBD — see open questions below).
+  cooldown, rounded down** (e.g. a 7-turn cooldown steals for 5 + 3 = 8).
 
 ---
 
+## Architecture requirements
+
+- **Character identity (name, portrait/image) must be decoupled from
+  ability logic.** Swapping a character's art or display name should never
+  touch ability code, and vice versa — a character is a data record that
+  *references* an ability implementation, not a class that contains one.
+- **Each ability is its own module**, iterable independently (numbers,
+  cooldowns, and edge-case behavior can change without touching other
+  abilities or the character roster).
+
 ## Open implementation questions (intentionally left as placeholders)
 
-- D's and H's exact turf-zone tiles (which quadrants/groups, and whether
-  they're allowed to overlap).
-- Whether Active/Active 2 cooldowns should survive a server restart exactly,
-  or reset like the turn timer and auction timer currently do (see
-  `systemDesign.md` §6 for the precedent — turn/auction timers already reset
-  to a fresh full duration on restart, recharge cooldowns would likely follow
-  the same simplification).
-- Exact rounding rule for SE's "half of the stolen ability's cooldown" when
-  that cooldown is odd.
+- **Stacking order** for events that could trigger two abilities at once —
+  e.g. a tax payment when both D (50%) and Z (5%) are in play; a rent
+  payment that falls inside both D's and H's turf if the zones end up
+  overlapping; whether H's 90% turf cut is deducted from the property's
+  actual owner, from the payer, or paid fresh from the bank.
+- **Heist edge cases** (deferred) — target with no active ability or an
+  ability on cooldown; whether stealing resets the original owner's
+  cooldown; stealing from another SE.
+- **Curse interaction with multipliers** (deferred) — whether a cursed
+  player's redirected earnings apply before or after SE's bank-payout
+  doubling or D/H's turf cuts.
+
+## Resolved
+
+- Recharge/cooldown state **survives a server restart** — unlike the turn
+  and auction timers (which reset to full duration per `systemDesign.md`
+  §6), ability cooldowns must persist across restarts.
+- Flank Seizure (H's second active) is cut. H has one active ability.
+- SE's Heist recharge rounds **down** on odd stolen cooldowns.
+- D's turf zone is the `salmonRight` group: tiles 13, 14, 16.
+- H's turf zone is the `salmonLeft` + `tealLeft` groups: tiles 37, 38, 39,
+  41, 44, 45, 47. No overlap with D's zone.
+- **No self-targeting**, across every ability that takes a player or
+  property target: Z cannot Curse himself, Y cannot Detonate his own
+  building, H cannot Hostile-Takeover a tile he already controls, SE
+  cannot Heist himself. (D's Barricade targets a tile, not a player or
+  property he owns, so this restriction doesn't apply to it.)

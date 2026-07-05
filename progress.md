@@ -9,6 +9,50 @@ in the same pass.
 
 ---
 
+## Pass 45 — 2026-07-04 — Restart no longer instant-kicks a mid-grace player
+
+**Goal:** follow-up to the connection-logic fixes earlier in this
+project's life — flagged as a known risk that a server restart on Render
+would instant-kick anyone who happened to be mid-disconnect-grace at the
+moment the snapshot was taken, instead of giving them a real chance to
+reconnect. Split into two separate problems (disk not surviving a Render
+*redeploy* is an infra/billing call, out of scope here); this pass is
+just the code half — a restart shouldn't punish a player harder than an
+ordinary live disconnect would.
+
+**What was done:**
+- `Room.js`'s `fromSnapshot`: the loop that used to call
+  `kickPlayer(..., "was disconnected when the server restarted...")` for
+  anyone `!connected` now calls `startGracePeriod(player.id)` instead —
+  a fresh full `DISCONNECT_GRACE_MS` (20s) window, same "fresh full
+  duration, not the exact remainder" simplification already used two
+  lines above it for the turn timer and auction timer. `room.notify` is
+  assigned by `index.js` immediately after `fromSnapshot()` returns (well
+  before the new 20s timer could ever fire), so the timer's eventual
+  `kickPlayer` + `notify()` call is safe.
+- New `server/test/snapshot.test.js` — no test touched `fromSnapshot` at
+  all before this. Covers a mid-grace player getting a fresh timer
+  (not kicked) and a connected player being unaffected by a restore.
+- `systemDesign.md`: updated the two spots documenting the old
+  "restart kicks mid-grace players" behavior (§2.4's persistence section
+  and §6's design-decisions/known-gaps notes), and removed the now-stale
+  "known gap" bullet describing it as an accepted limitation.
+
+**Why this call:** considered trying to preserve the *exact* remaining
+grace time across the restart instead of a fresh window, but that would
+mean persisting wall-clock deadlines and reasoning about clock drift —
+the same tradeoff `systemDesign.md` already accepts for the turn timer's
+"fresh 4 minutes, not exact remainder" behavior, so a fresh 20s window is
+the consistent choice here too, not a new simplification being invented.
+
+**State at end of pass:** server `npm test` 62/62 (2 new). No client
+changes. Not visually verified by the assistant per
+[[feedback-verification-approach]] — this specifically needs a real
+Render restart mid-game to confirm end-to-end (not fully reproducible
+locally, same caveat as the original stale-disconnect fix).
+
+---
+
 ## Pass 44 — 2026-07-04 — Arabize the card-draw log line and reveal labels (reversing Pass 40/41's "leave it" call)
 
 **Goal:** Pass 40/41 flagged the card-draw game-log wrapper and

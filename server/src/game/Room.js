@@ -1352,9 +1352,12 @@ export class Room {
   // Rebuilds a Room from a toSnapshot() dump (e.g. after a server restart). Two
   // things can't simply be restored as-is, since they depended on timer handles
   // that no longer exist:
-  //  - Anyone mid-disconnect-grace when the snapshot was taken has no way to
-  //    resume that exact window post-restart, so the restart itself is treated
-  //    as the grace period running out.
+  //  - Anyone mid-disconnect-grace when the snapshot was taken gets a fresh
+  //    full DISCONNECT_GRACE_MS window rather than being kicked outright --
+  //    same "fresh full duration, not the exact remainder" simplification as
+  //    the turn timer and auction timer just below, applied here too instead
+  //    of penalizing a player for a restart that had nothing to do with them
+  //    (they might have been about to reconnect right as it happened).
   //  - The current player's turn timer is re-armed for a fresh full duration
   //    rather than trying to preserve exactly how much time was left.
   static fromSnapshot(snapshot) {
@@ -1389,7 +1392,7 @@ export class Room {
 
     for (const player of room.players) {
       if (!player.connected && !player.left && !player.bankrupt) {
-        room.kickPlayer(player.id, "was disconnected when the server restarted and was removed from the game");
+        room.startGracePeriod(player.id);
       }
     }
     if (room.started && !room.winnerId) {
