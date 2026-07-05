@@ -22,7 +22,7 @@ function TurnCountdown({ deadline }) {
   );
 }
 
-export default function PlayersPanel({ state, myId, onLeave, theme, onToggleTheme, tokenMoving }) {
+export default function PlayersPanel({ state, myId, onLeave, theme, onToggleTheme, tokenMoving, onSwitchIdentity, playerTargeting, onPlayerTarget }) {
   const { players, roomCode, hostId, started, winnerId } = state;
   const isHost = hostId === myId;
   const currentPlayerId = started ? players[state.turnIndex]?.id : null;
@@ -152,8 +152,18 @@ export default function PlayersPanel({ state, myId, onLeave, theme, onToggleThem
           return (
             <div
               key={p.id}
-              className={`panel-player-row${isCurrent ? " current-turn" : ""}${p.bankrupt ? " bankrupt" : ""}${p.left ? " left" : ""}`}
+              className={`panel-player-row${isCurrent ? " current-turn" : ""}${p.bankrupt ? " bankrupt" : ""}${p.left ? " left" : ""}${onSwitchIdentity ? " switchable" : ""}${playerTargeting ? " targetable" : ""}`}
               style={isCurrent ? { "--c": p.color } : undefined}
+              onClick={
+                playerTargeting ? () => onPlayerTarget(p.id)
+                : onSwitchIdentity ? () => onSwitchIdentity(p.id)
+                : undefined
+              }
+              title={
+                playerTargeting ? `Target ${p.name}`
+                : onSwitchIdentity && !isMe ? `Switch to ${p.name}'s view`
+                : undefined
+              }
             >
               <PlayerAvatar player={p} sizeClass="panel-player-dot" />
               <div className="panel-player-info">

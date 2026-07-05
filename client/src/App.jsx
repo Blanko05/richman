@@ -6,6 +6,7 @@ import Lobby from "./components/Lobby";
 import BoardClassic from "./components/BoardClassic";
 import PlayersPanel from "./components/PlayersPanel";
 import MyProperties from "./components/MyProperties";
+import CharacterPanel from "./components/CharacterPanel";
 import OpenTrades from "./components/OpenTrades";
 import GameLog from "./components/GameLog";
 import TradeModal from "./components/TradeModal";
@@ -43,6 +44,21 @@ function App() {
   // a drawn Surprise/Treasure card until the token has actually landed.
   const [tokenMoving, setTokenMoving] = useState(false);
   const [confirmingLeave, setConfirmingLeave] = useState(false);
+  // Sandbox mode only (decisions.md): every seat's {playerId, token,
+  // characterId}, so this one tab can hop between all 6 via sandboxBecome.
+  // null outside sandbox mode -- also doubles as "are we in a sandbox" for
+  // gating PlayersPanel's click-to-switch (never something a real multiplayer
+  // room should allow).
+  const [sandboxIdentities, setSandboxIdentities] = useState(null);
+  // Shared ability-targeting state machine: null when no ability is mid-pick,
+  // otherwise { targetType: "tile"|"player", pendingParams }. While set, a
+  // board tile click (targetType "tile") or a player row click (targetType
+  // "player") submits that as the ability's target instead of its normal
+  // behavior (opening a property card / switching sandbox identity).
+  // pendingParams carries any params already chosen in an earlier step (only
+  // needed once Copy Cat's two-step targeting is wired).
+  const [targeting, setTargeting] = useState(null);
+  const [abilityError, setAbilityError] = useState("");
 
   useEffect(() => {
     applyTheme(theme);
@@ -255,12 +271,109 @@ function App() {
     setJoined(true);
   }
 
+  // Sandbox rooms are deliberately NOT persisted via saveSession -- there's
+  // no single "which of the 6 identities is really me" to restore on refresh,
+  // so a refresh just drops back to the lobby (session.js's single-slot
+  // localStorage model has no room for 6 identities at once anyway).
+  function handleSandboxJoined(res) {
+    setSandboxIdentities(res.identities);
+    setMyId(res.identities[0].playerId);
+    setJoined(true);
+  }
+
+  // Rebinds this tab's one socket to a different sandbox seat -- see
+  // sandboxBecome server-side. Only ever called with a playerId that's
+  // actually in sandboxIdentities (PlayersPanel only wires this up at all
+  // when sandboxIdentities is set).
+  function handleSwitchIdentity(playerId) {
+    const identity = sandboxIdentities?.find((i) => i.playerId === playerId);
+    if (!identity) return;
+    socket.emit("sandboxBecome", { code: state.code, playerId: identity.playerId, token: identity.token }, (res) => {
+      if (res?.ok) {
+        setMyId(identity.playerId);
+        setTargeting(null);
+        setAbilityError("");
+      }
+    });
+  }
+
+  function handleUseAbility(params, cb) {
+    socket.emit("useAbility", params, cb);
+  }
+
+  // Entered from CharacterPanel's Activate button for any ability whose
+  // targetType isn't "none". Copy Cat's targetType is "copyFrom", a distinct
+  // value from plain "player" (Curse) -- see handlePlayerTarget below for
+  // where the two-step flow actually branches.
+  function startTargeting(targetType) {
+    setAbilityError("");
+    setTargeting({ targetType });
+  }
+
+  function cancelTargeting() {
+    setTargeting(null);
+  }
+
+  // The actual submission, called either directly (targetType "none") or
+  // from a board tile click / player row click while targeting is active.
+  function submitAbility(params) {
+    socket.emit("useAbility", params, (res) => {
+      setAbilityError(res?.error || "");
+    });
+    setTargeting(null);
+  }
+
+  // A tile click while targeting is active. If copyFromId is set, this is
+  // Copy Cat's step 2 (the copied ability's own tile target, e.g. copying
+  // Detonate/Barricade/Hostile Takeover) -- otherwise it's a direct tile
+  // ability (Detonate/Barricade/Hostile Takeover cast normally).
+  function handleTileTarget(tileId) {
+    if (!targeting) return;
+    if (targeting.copyFromId) {
+      submitAbility({ copyFromId: targeting.copyFromId, params: { tileId } });
+    } else {
+      submitAbility({ tileId });
+    }
+  }
+
+  // A player-row click while targeting is active. Three cases:
+  //  - targetType "copyFrom" (Copy Cat step 1): this click is WHO to copy.
+  //    Look up their character's ability targetType to decide what happens
+  //    next -- "none" (Wrecking Tour) submits right away, otherwise this
+  //    becomes a step-2 targeting round of that type, with copyFromId
+  //    stashed so the eventual submission nests correctly.
+  //  - copyFromId already set (Copy Cat step 2, and the copied ability is
+  //    itself player-targeted, e.g. copying Curse): this click is that
+  //    ability's own target.
+  //  - otherwise: a direct player-targeted ability (Curse cast normally).
+  function handlePlayerTarget(playerId) {
+    if (!targeting) return;
+    if (targeting.targetType === "copyFrom") {
+      const targetCharacterId = state.players.find((p) => p.id === playerId)?.character;
+      const targetAbility = targetCharacterId ? state.abilities?.[targetCharacterId] : null;
+      if (!targetAbility || targetAbility.targetType === "none") {
+        submitAbility({ copyFromId: playerId, params: {} });
+      } else {
+        setTargeting({ targetType: targetAbility.targetType, copyFromId: playerId });
+      }
+      return;
+    }
+    if (targeting.copyFromId) {
+      submitAbility({ copyFromId: targeting.copyFromId, params: { targetId: playerId } });
+    } else {
+      submitAbility({ targetId: playerId });
+    }
+  }
+
   function handleLeave() {
     socket.emit("leaveRoom");
     clearSession();
     setJoined(false);
     setState(null);
     setMyId(null);
+    setSandboxIdentities(null);
+    setTargeting(null);
+    setAbilityError("");
   }
 
   if (rejoining) {
@@ -279,7 +392,7 @@ function App() {
   }
 
   if (!joined || !state) {
-    return <Lobby onJoined={handleJoined} theme={theme} onToggleTheme={toggleTheme} />;
+    return <Lobby onJoined={handleJoined} onSandboxJoined={handleSandboxJoined} theme={theme} onToggleTheme={toggleTheme} />;
   }
 
   if (!state.started) {
@@ -415,6 +528,15 @@ function App() {
   return (
     <div className="game-screen">
       <div className="game-screen-left">
+        <CharacterPanel
+          state={state}
+          myId={myId}
+          onUseAbility={handleUseAbility}
+          targeting={targeting}
+          abilityError={abilityError}
+          onStartTargeting={startTargeting}
+          onCancelTargeting={cancelTargeting}
+        />
         <MyProperties state={state} myId={myId} />
       </div>
 
@@ -423,6 +545,8 @@ function App() {
         myId={myId}
         tokenMoving={tokenMoving}
         onTokenMovingChange={setTokenMoving}
+        tileTargeting={targeting?.targetType === "tile"}
+        onTileTarget={handleTileTarget}
       />
 
       <div className="game-screen-right">
@@ -433,6 +557,9 @@ function App() {
           theme={theme}
           onToggleTheme={toggleTheme}
           tokenMoving={tokenMoving}
+          onSwitchIdentity={sandboxIdentities ? handleSwitchIdentity : undefined}
+          playerTargeting={targeting?.targetType === "player" || targeting?.targetType === "copyFrom"}
+          onPlayerTarget={handlePlayerTarget}
         />
         <OpenTrades
           state={state}

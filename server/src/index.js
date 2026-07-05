@@ -7,7 +7,20 @@ import path from "path";
 import { fileURLToPath } from "url";
 import { nanoid } from "nanoid";
 import { Room, generateRoomCode } from "./game/Room.js";
+import { ICON_IDS, ICON_COLORS } from "./game/icons.js";
 import { loadSnapshots, saveSnapshots } from "./persistence.js";
+
+// The 6-character sandbox roster (characters.md) -- one seat per character,
+// in a fixed order so the identities array returned to the client always
+// lines up with characterId the same way.
+const SANDBOX_ROSTER = [
+  { characterId: "D", label: "The Don" },
+  { characterId: "Z", label: "The Enforcer" },
+  { characterId: "Y", label: "The Wrecker" },
+  { characterId: "H", label: "The Kingpin" },
+  { characterId: "SD", label: "The Conductor" },
+  { characterId: "SE", label: "The Fixer" },
+];
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PORT = process.env.PORT || 4000;
@@ -116,6 +129,49 @@ io.on("connection", (socket) => {
     broadcastState(room.code);
   });
 
+  // Sandbox mode (characters.md/decisions.md): a testing harness, not a real
+  // multiplayer flow -- builds a fully-populated, already-started 6-player
+  // room (one seat per character) in one shot, bypassing the normal per-
+  // player icon/character lobby entirely, and hands the caller every seat's
+  // {playerId, token} back so a single browser tab can hop between all 6 via
+  // sandboxBecome below. Icons are cycled through the 5 real ids (deliberate
+  // one-pair overlap -- there are 6 seats and only 5 icons, and icon has no
+  // gameplay effect) rather than adding new content for a test-only tool.
+  socket.on("createSandboxRoom", (_payload, cb) => {
+    const code = generateRoomCode();
+    const hostId = nanoid();
+    const room = new Room(code, hostId);
+    room.notify = () => broadcastState(code);
+    const identities = SANDBOX_ROSTER.map(({ characterId, label }, i) => {
+      const playerId = i === 0 ? hostId : nanoid();
+      const token = nanoid();
+      room.addPlayer(playerId, token, label);
+      const player = room.playerById(playerId);
+      const iconId = ICON_IDS[i % ICON_IDS.length];
+      player.icon = iconId;
+      player.color = ICON_COLORS[iconId];
+      room.selectCharacter(playerId, characterId);
+      return { playerId, token, characterId };
+    });
+    room.start(); // bypasses playerStartGame's icon/character completeness gate on purpose
+    rooms.set(code, room);
+    bindSocket(socket, code, identities[0].playerId);
+    cb?.({ ok: true, code, identities });
+    broadcastState(code);
+  });
+
+  // Rebinds THIS socket to a different seat in the same sandbox room --
+  // deliberately not rejoinRoom (which also cancels a grace period and logs
+  // "X reconnected", neither of which applies here since every sandbox seat
+  // is always "connected").
+  socket.on("sandboxBecome", ({ code, playerId, token } = {}, cb) => {
+    const room = rooms.get(code?.toUpperCase());
+    if (!room) return cb?.({ error: "Room not found" });
+    if (!room.verifyToken(playerId, token)) return cb?.({ error: "Invalid session" });
+    bindSocket(socket, room.code, playerId);
+    cb?.({ ok: true, playerId });
+  });
+
   socket.on("leaveRoom", () => {
     const room = getRoom(socket);
     const playerId = getPlayerId(socket);
@@ -162,6 +218,22 @@ io.on("connection", (socket) => {
     const room = getRoom(socket);
     if (!room) return cb?.({ error: "Room not found" });
     const result = room.setPlayerIcon(getPlayerId(socket), iconId);
+    if (result.ok) broadcastState(room.code);
+    cb?.(result);
+  });
+
+  socket.on("selectCharacter", ({ characterId } = {}, cb) => {
+    const room = getRoom(socket);
+    if (!room) return cb?.({ error: "Room not found" });
+    const result = room.selectCharacter(getPlayerId(socket), characterId);
+    if (result.ok) broadcastState(room.code);
+    cb?.(result);
+  });
+
+  socket.on("useAbility", (payload, cb) => {
+    const room = getRoom(socket);
+    if (!room) return cb?.({ error: "Room not found" });
+    const result = room.useAbility(getPlayerId(socket), payload || {});
     if (result.ok) broadcastState(room.code);
     cb?.(result);
   });

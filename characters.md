@@ -1,18 +1,23 @@
 # Playable Characters — Design Spec
 
-**Status: locked design, not yet implemented.** This is the finalized
-ability spec for the 6-character system, worked out in conversation before
-any code was written. When implementation starts, this is the source of
+**Status: server-side logic implemented and unit-tested** (see
+`server/src/game/characters/`, `server/src/game/abilities/`, and the
+`server/test/*.test.js` files for each character). This is the source of
 truth for what each character is supposed to do — update it in place if a
-number or rule changes during implementation, the same way
-[systemDesign.md](systemDesign.md) tracks the current architecture.
+number or rule changes, the same way [systemDesign.md](systemDesign.md)
+tracks the current architecture. Every design/implementation decision along
+the way, including a few judgment calls worth reviewing, is in
+[decisions.md](decisions.md).
+
+**Not yet done: client-side integration** — character-selection UI, ability-
+use UI, cooldown/effect indicators (barricade wall, curse, hostile takeover),
+and the socket events wiring `Room.selectCharacter`/`Room.useAbility` to the
+client. Planned as a separate next step.
 
 Theme: crime-boss / heist archetypes. Real portraits are decided separately.
-Selection mechanics (lobby flow, uniqueness enforcement, `selectCharacter`
-event) and the images-are-just-static-assets approach are settled but not
-detailed here — re-derive from `systemDesign.md`'s existing patterns
-(`board.js`/`cards.js` as the model for a future `characters.js`) when
-implementation starts.
+`selectCharacter` is room-exclusive, mirroring `setPlayerIcon`'s uniqueness
+pattern (see `decisions.md`) — implemented in `Room.js` already, just not
+yet exposed over a socket event or given a lobby UI.
 
 ---
 
@@ -22,18 +27,24 @@ implementation starts.
 
 - Holds a **30% stake** in his turf zone — the `salmonRight` color group:
   tile 13 (اغوار الشمال), tile 14 (نهر الميراندا), tile 16 (اغوار الجنوب).
-  Any rent collected on those three tiles pays D 30% of the amount on top.
+  Any rent collected on those three tiles pays D 30% of the amount, taken
+  via the bank-mediated cut pattern (see below) — the payer owes the same
+  rent as always, and the owner's earnings are the ones reduced.
 - Takes **50% of every tax payment** any other player makes, anywhere on the
-  board, not just inside his turf. Paid from the bank — never an extra
-  charge on the taxed player.
+  board, not just inside his turf. Bank-mediated — never an extra charge on
+  the taxed player.
 
 **Active — Barricade, rechargeable, 10-turn cooldown.**
 
 - Places a wall on any one tile of his choice.
-- For the rest of that round, any player whose movement would otherwise carry
-  them past that tile is stopped there instead, and resolves that tile's
-  normal action (rent, tax, card draw, etc.) as if they'd landed on it
-  exactly — even if their roll would have taken them further.
+- A one-shot trap, not a lasting wall for the round: the FIRST player whose
+  movement would otherwise carry them past that tile is stopped there
+  instead, and resolves that tile's normal action (rent, tax, card draw,
+  etc.) as if they'd landed on it exactly — even if their roll would have
+  taken them further. The wall then deactivates immediately, springing only
+  once per placement — everyone after that (including that same player
+  again, later the same round) passes through freely. If nobody crosses it,
+  it expires unused at the end of the round it was placed in.
 - The barricade itself doesn't charge a toll; whatever the player owes is
   just whatever that tile would normally charge.
 
@@ -48,14 +59,23 @@ the table doesn't trade or get taxed.**
   sides plus the listed board `price` of any properties changing hands, not
   just the coins involved.
 - Takes **5% of every tax payment** any player makes.
-- Both percentages are pulled from the bank, same as D's tax cut — never an
-  extra charge on the player actually paying.
+- Both percentages are bank-mediated, same as D's tax cut — never an extra
+  charge on the player actually paying. (A trade or a tax payment has no
+  single "earner" to deduct from, so unlike D's/H's turf cuts, the bank
+  simply absorbs Z's share.)
 
 **Active — Curse, rechargeable, 7-turn cooldown.**
 
 - Targets any player. For the remainder of that round, **100% of whatever
   that player would earn** goes to Z instead — the cursed player gets nothing
   at all from any source until the round ends.
+- The redirect is the last step in resolving any payout: compute the amount
+  the cursed player would have received as usual (after any other
+  modifier already in play — e.g. SE's bank-payout doubling if the cursed
+  player is SE, or a turf cut if the earnings came from a D/H zone), then
+  send that final amount to Z instead. Only *incoming* earnings redirect —
+  the cursed player's own expenses (rent owed, tax owed, etc.) are paid
+  normally, uncursed.
 - Drawback: Z cannot pay to leave the holding tile early — must always wait
   out the full sentence.
 
@@ -90,8 +110,9 @@ the table doesn't trade or get taxed.**
   37 (بابل), 38 (اربيل), 39 (كربلاء), 41 (بغداد), 44 (الطفيلة), 45 (السلط),
   47 (اربد). Does not overlap with D's zone (tiles 13/14/16).
 - Tracks landings on that zone across all players. Every **third landing**
-  (a deterministic counter, not a random chance) triggers a **90% cut** of
-  that landing's earnings to H.
+  (a deterministic counter, not a random chance) triggers a **90% cut**,
+  bank-mediated same as D's turf cut — the payer pays normal rent, and the
+  property owner's earnings are the ones reduced by 90%.
 
 **Active — Hostile Takeover, rechargeable, 7-turn static cooldown.**
 
@@ -129,12 +150,15 @@ the table doesn't trade or get taxed.**
 - Collects **$800** for landing exactly on Start.
 - Any payout from the bank (cards, etc.) is **doubled**.
 
-**Active — Heist, rechargeable, cooldown depends on what's stolen.**
+**Active — Copy Cat, rechargeable, cooldown depends on what's copied.**
 
-- Steals another player's active ability and uses it once, on the spot, as
-  if SE owned it.
-- Recharge formula: **5 turns + half of the stolen ability's own static
-  cooldown, rounded down** (e.g. a 7-turn cooldown steals for 5 + 3 = 8).
+- **Copies**, not steals: targets another player's active ability and uses
+  an independent instance of it once, on the spot. The target's own copy
+  of that ability — its cooldown, availability, everything — is completely
+  unaffected. This also means SE can copy an ability that's currently on
+  cooldown for its original owner; the two are tracked separately.
+- Recharge formula: **5 turns + half of the copied ability's own static
+  cooldown, rounded down** (e.g. a 7-turn cooldown copies for 5 + 3 = 8).
 
 ---
 
@@ -148,32 +172,58 @@ the table doesn't trade or get taxed.**
   cooldowns, and edge-case behavior can change without touching other
   abilities or the character roster).
 
-## Open implementation questions (intentionally left as placeholders)
+## Bank-mediated cut pattern
 
-- **Stacking order** for events that could trigger two abilities at once —
-  e.g. a tax payment when both D (50%) and Z (5%) are in play; a rent
-  payment that falls inside both D's and H's turf if the zones end up
-  overlapping; whether H's 90% turf cut is deducted from the property's
-  actual owner, from the payer, or paid fresh from the bank.
-- **Heist edge cases** (deferred) — target with no active ability or an
-  ability on cooldown; whether stealing resets the original owner's
-  cooldown; stealing from another SE.
-- **Curse interaction with multipliers** (deferred) — whether a cursed
-  player's redirected earnings apply before or after SE's bank-payout
-  doubling or D/H's turf cuts.
+The standard mechanism for every percentage-cut ability in this spec: the
+bank pays the ability holder their cut immediately, and — only where the
+underlying payment has an actual player recipient — that same amount is
+then deducted from whoever would otherwise have earned it in full. The
+player who initiated the payment (rent payer, taxpayer) is never charged
+extra; only the intended recipient's take is reduced, and only if there is
+one.
+
+- **D's turf rent cut (30%)** and **H's turf landing cut (90%)** — deducted
+  from the property owner's earnings. Payer pays the same rent as always.
+- **D's tax cut (50%)** and **Z's tax cut (5%)** — a tax payment has no
+  player recipient (it goes to the bank), so nothing is deducted from any
+  player; the bank simply absorbs the cut.
+- **Z's trade cut (5%)** — same reasoning as tax: no single player "earns"
+  a trade, so the bank absorbs it.
+
+Multiple cuts on the same event stack independently and don't interact —
+e.g. a tax payment with both D and Z active pays out 50% + 5% = 55% from
+the bank, on top of the taxpayer's unchanged tax bill.
 
 ## Resolved
+
+- **Tax stacking**: D's 50% and Z's 5% both apply to the same tax payment
+  when both are in play, each independently bank-mediated. The taxed player
+  pays the normal tax amount, unaffected either way.
+- **Bank-mediated cut pattern** established as the standard mechanism for
+  every percentage-cut ability — see above.
+- **Copy Cat copies, it doesn't steal** — the target's own ability and
+  cooldown are untouched; SE uses an independent instance, unaffected by
+  the target's cooldown state.
+- **Curse's redirect is the final step** in resolving a payout — it applies
+  to the fully-computed amount (after any other modifier, e.g. SE's
+  doubling or a turf cut), and only to incoming earnings, never expenses.
+- **Characters are room-exclusive** — same uniqueness scope as icon
+  selection (`setPlayerIcon` in `Room.js`): a character can only be held by
+  one active, non-left player per room, enforced pre-start the same way
+  color/icon are (`selectCharacter` follows that exact pattern). This also
+  settles Copy Cat-on-SE for free — since at most one SE can ever exist in
+  a room, "copying another SE's Copy Cat" can't happen.
 
 - Recharge/cooldown state **survives a server restart** — unlike the turn
   and auction timers (which reset to full duration per `systemDesign.md`
   §6), ability cooldowns must persist across restarts.
 - Flank Seizure (H's second active) is cut. H has one active ability.
-- SE's Heist recharge rounds **down** on odd stolen cooldowns.
+- SE's Copy Cat recharge rounds **down** on odd copied cooldowns.
 - D's turf zone is the `salmonRight` group: tiles 13, 14, 16.
 - H's turf zone is the `salmonLeft` + `tealLeft` groups: tiles 37, 38, 39,
   41, 44, 45, 47. No overlap with D's zone.
 - **No self-targeting**, across every ability that takes a player or
   property target: Z cannot Curse himself, Y cannot Detonate his own
   building, H cannot Hostile-Takeover a tile he already controls, SE
-  cannot Heist himself. (D's Barricade targets a tile, not a player or
+  cannot Copy Cat himself. (D's Barricade targets a tile, not a player or
   property he owns, so this restriction doesn't apply to it.)

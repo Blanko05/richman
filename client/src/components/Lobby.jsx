@@ -23,7 +23,7 @@ const FADE_DURATION  = 500;
 // Steps: 'landing' → 'create-mode' → done (color and rules are picked once
 //        inside the room, not here)
 //        'landing' → 'join'
-export default function Lobby({ onJoined, theme, onToggleTheme }) {
+export default function Lobby({ onJoined, onSandboxJoined, theme, onToggleTheme }) {
   // Quote cycling
   const [quoteIdx,  setQuoteIdx]  = useState(0);
   const [fading,    setFading]    = useState(false);
@@ -33,6 +33,11 @@ export default function Lobby({ onJoined, theme, onToggleTheme }) {
 
   // Shared identity
   const [name,  setName]  = useState("");
+
+  // Game mode (create flow only) -- "characters" skips the normal per-player
+  // lobby entirely and jumps straight into a 6-seat testing sandbox (see
+  // createSandboxRoom, decisions.md).
+  const [mode, setMode] = useState("normal"); // 'normal'|'characters'
 
   // Join-specific
   const [code, setCode] = useState("");
@@ -55,6 +60,14 @@ export default function Lobby({ onJoined, theme, onToggleTheme }) {
   function createRoom() {
     if (!name.trim()) return setError("Enter your name first");
     setBusy(true);
+    if (mode === "characters") {
+      socket.emit("createSandboxRoom", {}, (res) => {
+        setBusy(false);
+        if (res?.error) return setError(res.error);
+        onSandboxJoined(res);
+      });
+      return;
+    }
     socket.emit("createRoom", { name: name.trim() }, (res) => {
       setBusy(false);
       if (res?.error) return setError(res.error);
@@ -192,14 +205,24 @@ export default function Lobby({ onJoined, theme, onToggleTheme }) {
             <WizardHeader step={1} total={1} title="Choose Game Mode" onBack={() => go("landing")} />
 
             <div className="mode-picker">
-              <button className="mode-btn active">⚔ Normal</button>
-              <button className="mode-btn mode-btn-disabled" disabled title="Coming soon">
-                ★ Characters <span className="mode-btn-soon-banner">Coming Soon</span>
+              <button
+                className={`mode-btn${mode === "normal" ? " active" : ""}`}
+                onClick={() => setMode("normal")}
+              >
+                ⚔ Normal
+              </button>
+              <button
+                className={`mode-btn${mode === "characters" ? " active" : ""}`}
+                onClick={() => setMode("characters")}
+              >
+                ★ Characters
               </button>
             </div>
 
             <p className="lobby-mode-desc">
-              Classic property trading — pick your color and rules once you're in the room.
+              {mode === "characters"
+                ? "Testing sandbox: jumps straight into a 6-seat game, one per character, so you can switch between them and try abilities."
+                : "Classic property trading — pick your color and rules once you're in the room."}
             </p>
 
             {error && <p className="lobby-error">{error}</p>}

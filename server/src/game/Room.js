@@ -2,6 +2,22 @@ import { nanoid } from "nanoid";
 import { TILE_TYPES, BOARD, TOTAL_TILES, propertiesByGroup } from "./board.js";
 import { SURPRISE_CARDS, TREASURE_CARDS, shuffledDeck } from "./cards.js";
 import { ICON_IDS, ICON_COLORS } from "./icons.js";
+import { CHARACTER_IDS, CHARACTERS, abilityFor } from "./characters/index.js";
+import { ABILITIES } from "./abilities/index.js";
+
+// Client-safe projection of the ability registry -- display metadata only
+// (name/description/cooldown label/target type), never the actual active()/
+// passives/modifyRent functions themselves, which obviously can't cross a
+// JSON socket payload anyway.
+const ABILITY_DISPLAY_INFO = Object.fromEntries(
+  Object.entries(ABILITIES).map(([id, ability]) => [id, {
+    activeName: ability.activeName,
+    description: ability.description,
+    passiveDescription: ability.passiveDescription,
+    cooldownLabel: ability.cooldownLabel,
+    targetType: ability.targetType,
+  }]),
+);
 
 // Exported so the test suite can assert against these by name instead of
 // hardcoding magic numbers that would silently drift out of sync if tuned here.
@@ -16,6 +32,10 @@ export const AUCTION_EXTEND_MS = 3 * 1000;
 export const MIN_TRADE_TIME_LIMIT_SEC = 10;
 export const MAX_TRADE_TIME_LIMIT_SEC = 10 * 60;
 export const WASTA_SUCCESS_RATE = 0.3;
+// Only the REST tiles literally named this ease ability cooldowns -- tile 24
+// ("استراحة محارب") is REST too but a deliberately distinct flavor, left with
+// just the existing vacation-pot payout (decisions.md).
+export const COOLDOWN_REST_TILE_NAME = "عليكم الأمان";
 
 const PLAYER_COLORS = ["#e74c3c", "#3498db", "#2ecc71", "#f1c40f", "#9b59b6", "#1abc9c"];
 
@@ -47,6 +67,11 @@ export class Room {
     this.ownership = {};
     this.started = false;
     this.turnIndex = 0;
+    // One full lap of the seat array (this.players), counted independently of
+    // which seats are bankrupt/left -- see decisions.md ("round" definition).
+    // Character effects scoped to "the rest of the round" (Curse, Barricade)
+    // are active until this next increments.
+    this.round = 0;
     this.surpriseDeck = shuffledDeck(SURPRISE_CARDS);
     this.treasureDeck = shuffledDeck(TREASURE_CARDS);
     this.log = [];
@@ -84,6 +109,37 @@ export class Room {
     // can pop the wasta reveal exactly once per attempt.
     this.wastaSeq = 0;
     this.lastWastaAttempt = null;
+    // D's Barricade (see abilities/don.js) -- { tileId, roundPlaced } while a
+    // wall is up, null otherwise. A one-shot trap, not a lasting wall: it
+    // clears itself (see applyBarricade) the instant it catches its first
+    // player, or at the end of the round if nobody ever crosses it.
+    // barricadeSeq/lastBarricadeStop follow the same "tell the client a
+    // special move just happened" role as jailSeq/jailFromTileId, since a
+    // barricaded move needs to animate stopping short of the roll's real
+    // distance instead of walking the full amount.
+    this.barricade = null;
+    this.barricadeSeq = 0;
+    this.lastBarricadeStop = null;
+    // Z's Curse (see abilities/enforcer.js) -- a list of { targetId, casterId,
+    // roundPlaced }, one per simultaneously active curse. A list, not a single
+    // slot, because Copy Cat can cast an independent second Curse (its own
+    // caster/target/cooldown) while Z's real one is still active -- see
+    // decisions.md. Each entry only ever redirects its own targetId's earnings
+    // to its own casterId; a redirect is a terminal, direct transfer, never
+    // itself re-checked against another curse, so even a mutual curse (A
+    // curses B, B curses A) can't ping-pong -- see settleEarning below.
+    this.activeCurses = [];
+    // H's Hostile Takeover (see abilities/kingpin.js) -- { tileId,
+    // previousOwnership, roundPlaced } while active, null otherwise. Reverts to
+    // previousOwnership (or unowned, if it was previousOwnership === null) at
+    // the end of the round it was cast in -- see the revert call in endTurn.
+    this.hostileTakeover = null;
+    // SD's Wrecking Tour (see abilities/conductor.js) -- bumped/set each use
+    // so every client (not just the caster) can animate the bus travelling
+    // startTileId -> path -> back, same "tell the client a special move just
+    // happened" role as barricadeSeq/lastBarricadeStop.
+    this.wreckingTourSeq = 0;
+    this.lastWreckingTour = null;
   }
 
   updateSettings(hostId, { rules } = {}) {
@@ -131,6 +187,15 @@ export class Room {
       left: false,
       properties: [],
       icon: null,
+      // Character selection (see characters/index.js) -- room-exclusive, same
+      // uniqueness scope as icon. abilityCooldown counts down in the holder's
+      // own turns only (decisions.md); abilityState is a free-form scratch
+      // object each ability module manages for its own per-player state (a
+      // curse target, a barricaded tile, etc.) so Room.js stays agnostic of
+      // any specific character's internals.
+      character: null,
+      abilityCooldown: 0,
+      abilityState: {},
     });
   }
 
@@ -259,6 +324,20 @@ export class Room {
     return { ok: true };
   }
 
+  // Character is room-exclusive, same uniqueness scope as icon (see
+  // characters/index.js and decisions.md) -- at most one player per room can
+  // hold a given character.
+  selectCharacter(playerId, characterId) {
+    const player = this.playerById(playerId);
+    if (!player) return { error: "Not in this room" };
+    if (this.started) return { error: "Game already started" };
+    if (!CHARACTER_IDS.includes(characterId)) return { error: "Invalid character" };
+    const taken = this.players.some((p) => p.id !== playerId && !p.left && p.character === characterId);
+    if (taken) return { error: "Character already taken" };
+    player.character = characterId;
+    return { ok: true };
+  }
+
   // Player-facing "Start Game" action -- unlike start() below (also called
   // directly by the test suite, which never bothers picking icons), this
   // enforces the actual pre-game rules: only the host can start, only once
@@ -272,6 +351,7 @@ export class Room {
     const active = this.players.filter((p) => !p.left);
     if (active.length < 2) return { error: "Need at least 2 players to start" };
     if (active.some((p) => !p.icon)) return { error: "Every player must choose an icon before starting" };
+    if (active.some((p) => !p.character)) return { error: "Every player must choose a character before starting" };
     this.start();
     return { ok: true };
   }
@@ -405,23 +485,53 @@ export class Room {
     return { rolled: [d1, d2], doubles: rolledDoubles };
   }
 
+  // Barricade (D's active, decisions.md) intercepts forward movement only: if
+  // a wall is up and this move's path would carry the player past the
+  // barricaded tile, they stop there instead -- however far the roll would
+  // otherwise have gone. Returns the (possibly shortened) steps to actually
+  // move; unchanged for backward movement or when no barricade is active.
+  // It's a one-shot trap, not a wall that lasts the whole round: the FIRST
+  // player it catches springs it, clearing this.barricade immediately so
+  // nobody else (including that same player again) is stopped by it later
+  // in the same round.
+  applyBarricade(prev, steps) {
+    if (!this.barricade || steps <= 0) return steps;
+    if (this.barricade.roundPlaced !== this.round) {
+      this.barricade = null;
+      return steps;
+    }
+    let distance = this.barricade.tileId - prev;
+    if (distance <= 0) distance += this._totalTiles;
+    if (distance < steps) {
+      this.barricade = null;
+      return distance;
+    }
+    return steps;
+  }
+
   movePlayer(player, steps) {
     const prev = player.position;
-    let next = (prev + steps) % this._totalTiles;
+    const effectiveSteps = this.applyBarricade(prev, steps);
+    let next = (prev + effectiveSteps) % this._totalTiles;
     if (next < 0) next += this._totalTiles;
-    if (steps > 0 && next < prev) {
+    if (effectiveSteps > 0 && next < prev) {
       // Landing exactly on Start pays double the pass-through bonus -- a
       // distinct, rarer outcome (needing the exact roll) worth the extra
       // payout, same idea as Free Parking jackpots in other variants.
       if (next === 0) {
-        player.balance += 400;
+        this.settleEarning(player.id, () => { player.balance += 400; }, { isBankPayout: true });
         this.pushLog(`${player.name} landed on Start Plaza and collected 400 coins.`);
       } else {
-        player.balance += 200;
+        this.settleEarning(player.id, () => { player.balance += 200; }, { isBankPayout: true });
         this.pushLog(`${player.name} passed Start Plaza and collected 200 coins.`);
       }
     }
     player.position = next;
+    if (effectiveSteps !== steps) {
+      this.barricadeSeq += 1;
+      this.lastBarricadeStop = { playerId: player.id, tileId: next, fromTileId: prev };
+      this.pushLog(`${player.name} was stopped short by a barricade at ${this._board[next].name}.`);
+    }
     this.resolveTile(player);
   }
 
@@ -434,6 +544,12 @@ export class Room {
       case TILE_TYPES.TRANSIT:
       case TILE_TYPES.UTILITY: {
         const owned = this.ownership[tile.id];
+        // Fires unconditionally, before the ownership/rent branching below --
+        // H's landing counter (characters.md) counts every landing on his
+        // turf regardless of ownership state, only the *cut* depends on rent
+        // actually being owed (see onRentPaid below, which reads the count
+        // this just updated).
+        this.triggerPassive("onLanding", { playerId: player.id, tileId: tile.id });
         if (!owned) {
           this.pendingAction = { type: "awaitBuy", tileId: tile.id, playerId: player.id };
         } else if (owned.ownerId !== player.id) {
@@ -443,8 +559,16 @@ export class Room {
             this.pushLog(`${player.name} landed on ${tile.name}, but the owner is in prison — no rent owed.`);
           } else {
             const rent = this.calcRent(tile, owned);
-            this.transferMoney(player.id, owned.ownerId, rent);
-            this.pushLog(`${player.name} paid ${rent} rent to ${this.playerById(owned.ownerId).name} for ${tile.name}.`);
+            const ownerName = this.playerById(owned.ownerId).name;
+            // Wrapped as one span so Curse (if the owner is cursed) checks the
+            // owner's NET gain after any turf cut has already been deducted,
+            // not the raw rent before it -- see settleEarning. Not a bank
+            // payout -- rent is player-to-player, never doubled by SE.
+            this.settleEarning(owned.ownerId, () => {
+              this.transferMoney(player.id, owned.ownerId, rent);
+              this.triggerPassive("onRentPaid", { payerId: player.id, ownerId: owned.ownerId, tileId: tile.id, rent });
+            });
+            this.pushLog(`${player.name} paid ${rent} rent to ${ownerName} for ${tile.name}.`);
           }
         }
         break;
@@ -453,6 +577,7 @@ export class Room {
         player.balance -= tile.amount;
         if (this.rules.vacationPot) this.vacationPot += tile.amount;
         this.pushLog(`${player.name} paid ${tile.amount} coins toll at ${tile.name}.`);
+        this.triggerPassive("onTaxPaid", { payerId: player.id, amount: tile.amount });
         break;
       case TILE_TYPES.SURPRISE:
         this.drawCard(player, "surprise");
@@ -465,9 +590,15 @@ export class Room {
         break;
       case TILE_TYPES.REST:
         if (this.rules.vacationPot && this.vacationPot > 0) {
-          player.balance += this.vacationPot;
-          this.pushLog(`${player.name} landed on Vacation and collected the pot of ${this.vacationPot} coins!`);
+          const pot = this.vacationPot;
+          this.settleEarning(player.id, () => { player.balance += pot; }, { isBankPayout: true });
+          this.pushLog(`${player.name} landed on Vacation and collected the pot of ${pot} coins!`);
           this.vacationPot = 0;
+        }
+        if (tile.name === COOLDOWN_REST_TILE_NAME && player.character && player.abilityCooldown > 0) {
+          const reduction = Math.min(player.abilityCooldown, 1 + Math.floor(Math.random() * 2));
+          player.abilityCooldown -= reduction;
+          this.pushLog(`${player.name}'s ability cooldown eased by ${reduction} turn(s) at ${tile.name}.`);
         }
         break;
       case TILE_TYPES.HOLDING:
@@ -481,27 +612,40 @@ export class Room {
   }
 
   calcRent(tile, owned) {
+    let rent;
     if (tile.type === TILE_TYPES.PROPERTY) {
       const houses = owned.houses || 0;
       const groupTiles = this._propertiesByGroup(tile.group);
       const ownsAll = groupTiles.every((t) => this.ownership[t.id]?.ownerId === owned.ownerId);
-      let rent = tile.rent[houses];
+      rent = tile.rent[houses];
       if (houses === 0 && ownsAll && this.rules.doubleRentFullSet) rent *= 2;
-      return rent;
-    }
-    if (tile.type === TILE_TYPES.TRANSIT) {
+    } else if (tile.type === TILE_TYPES.TRANSIT) {
       const owner = owned.ownerId;
       const count = this._board.filter((t) => t.type === TILE_TYPES.TRANSIT && this.ownership[t.id]?.ownerId === owner).length;
-      return tile.rent[Math.min(count - 1, tile.rent.length - 1)];
-    }
-    if (tile.type === TILE_TYPES.UTILITY) {
+      rent = tile.rent[Math.min(count - 1, tile.rent.length - 1)];
+    } else if (tile.type === TILE_TYPES.UTILITY) {
       const owner = owned.ownerId;
       const count = this._board.filter((t) => t.type === TILE_TYPES.UTILITY && this.ownership[t.id]?.ownerId === owner).length;
       const mult = tile.multiplier[Math.min(count - 1, tile.multiplier.length - 1)];
       const roll = (this.lastRoll?.[0] || 0) + (this.lastRoll?.[1] || 0);
-      return mult * roll;
+      rent = mult * roll;
+    } else {
+      return 0;
     }
-    return 0;
+    return this.applyRentModifiers(tile, owned, rent);
+  }
+
+  // A second kind of ability hook, distinct from triggerPassive: this one
+  // returns a (possibly modified) value instead of firing a side effect, for
+  // abilities that change the rent itself rather than reacting after it's
+  // paid (SD's station-toll doubling, characters.md).
+  applyRentModifiers(tile, owned, rent) {
+    for (const holder of this.activePlayers()) {
+      if (!holder.character) continue;
+      const modify = abilityFor(holder.character)?.modifyRent;
+      if (modify) rent = modify(this, { tile, owned, rent, holder });
+    }
+    return rent;
   }
 
   drawCard(player, deckName) {
@@ -533,19 +677,19 @@ export class Room {
         if (this.rules.vacationPot) this.vacationPot += effect.amount;
         break;
       case "collect":
-        player.balance += effect.amount;
+        this.settleEarning(player.id, () => { player.balance += effect.amount; }, { isBankPayout: true });
         break;
       case "payEachPlayer":
         for (const other of this.players) {
           if (other.id !== player.id && !other.bankrupt) {
-            this.transferMoney(player.id, other.id, effect.amount);
+            this.settleEarning(other.id, () => this.transferMoney(player.id, other.id, effect.amount));
           }
         }
         break;
       case "collectFromEachPlayer":
         for (const other of this.players) {
           if (other.id !== player.id && !other.bankrupt) {
-            this.transferMoney(other.id, player.id, effect.amount);
+            this.settleEarning(player.id, () => this.transferMoney(other.id, player.id, effect.amount));
           }
         }
         break;
@@ -597,6 +741,10 @@ export class Room {
     const player = this.currentPlayer();
     if (!player || player.id !== playerId) return { error: "Not your turn" };
     if (!player.inHolding) return { error: "You're not in the Holding Pen" };
+    // Z's permanent drawback (characters.md/decisions.md) -- always in effect,
+    // not tied to whether Curse has ever been cast: Z must always wait out the
+    // full sentence.
+    if (player.character === "Z") return { error: "The Enforcer can't buy their way out of the Holding Pen" };
     if (player.balance < HOLDING_RELEASE_RENT) return { error: "Not enough coins" };
     player.balance -= HOLDING_RELEASE_RENT;
     player.inHolding = false;
@@ -924,8 +1072,9 @@ export class Room {
     const player = this.playerById(playerId);
     const refund = Math.floor(tile.housePrice / 2);
     owned.houses -= 1;
-    player.balance += refund;
+    this.settleEarning(playerId, () => { player.balance += refund; }, { isBankPayout: true });
     this.pushLog(`${player.name} sold a house on ${tile.name} for ${refund} coins (now level ${owned.houses}).`);
+    this.triggerPassive("onDemolish", { player, tileId, levelsRemoved: 1 });
     return { ok: true };
   }
 
@@ -940,8 +1089,9 @@ export class Room {
     const player = this.playerById(playerId);
     const value = Math.floor(tile.price / 2);
     owned.mortgaged = true;
-    player.balance += value;
+    this.settleEarning(playerId, () => { player.balance += value; }, { isBankPayout: true });
     this.pushLog(`${player.name} mortgaged ${tile.name} for ${value} coins.`);
+    this.triggerPassive("onMortgage", { player, tileId });
     return { ok: true };
   }
 
@@ -971,6 +1121,129 @@ export class Room {
     const to = this.playerById(toId);
     from.balance -= amount;
     to.balance += amount;
+  }
+
+  // Bank-mediated cut pattern (decisions.md): pays `holder` their cut straight
+  // from the bank, then -- only if `fromPlayerId` is given -- deducts that same
+  // amount from whoever would otherwise have earned it in full. Used for every
+  // percentage-cut passive (D's turf/tax cut, Z's trade/tax cut, H's turf cut).
+  // Tax and trade cuts have no single player "earner" to deduct from, so they
+  // just omit fromPlayerId and the bank absorbs it, same as it always has.
+  // The holder's own credit is curse-aware (self-contained -- nothing later
+  // claws back from the holder over this specific credit, unlike the
+  // fromPlayerId deduction, which is a raw expense and never cursed).
+  bankMediatedCut(holderId, amount, fromPlayerId = null) {
+    if (amount <= 0) return;
+    this.settleEarning(holderId, () => {
+      this.playerById(holderId).balance += amount;
+    }, { isBankPayout: true });
+    if (fromPlayerId) {
+      this.playerById(fromPlayerId).balance -= amount;
+    }
+  }
+
+  // Settles an earning event for recipientId: run `fn` (which may credit them
+  // and then have some other modifier -- a turf cut, etc. -- partially claw it
+  // back, all within the same span), then compare their balance before/after
+  // across that WHOLE span. Two modifiers can apply to that final net gain, in
+  // this order (decisions.md: Curse is explicitly the LAST step):
+  //   1. SE's bank-payout doubling (abilities/fixer.js) -- only when
+  //      isBankPayout is true, since it's scoped to genuine bank payouts
+  //      (Start bonus, card collects, sell/mortgage refunds, ability cuts),
+  //      never player-to-player money (rent, trade, payEachPlayer).
+  //   2. Curse's redirect (abilities/enforcer.js) -- if recipientId is
+  //      currently cursed, the fully-computed net gain (post-doubling) is
+  //      reversed and handed to the curse's caster instead.
+  // This must wrap the entire event, not each individual credit inside it, or
+  // a later clawback would incorrectly apply to a balance already moved away.
+  settleEarning(recipientId, fn, { isBankPayout = false } = {}) {
+    const recipient = this.playerById(recipientId);
+    const before = recipient.balance;
+    fn();
+    let netGain = recipient.balance - before;
+    if (isBankPayout && netGain > 0) {
+      const doubled = this.applyBankPayoutDoubling(recipientId, netGain);
+      if (doubled !== netGain) {
+        recipient.balance += doubled - netGain;
+        netGain = doubled;
+      }
+    }
+    // At most one active curse can ever target a given recipient -- Curse's
+    // own active() (abilities/enforcer.js) rejects cursing someone already
+    // cursed by a different caster, so this find() never has more than one
+    // match to choose between.
+    const curse = this.activeCurses.find((c) => c.targetId === recipientId && c.roundPlaced === this.round);
+    if (netGain > 0 && curse) {
+      recipient.balance -= netGain;
+      this.playerById(curse.casterId).balance += netGain;
+    }
+  }
+
+  // A third ability-hook kind (alongside triggerPassive and applyRentModifiers):
+  // returns a (possibly modified) bank-payout amount. Only SE uses this today.
+  applyBankPayoutDoubling(recipientId, amount) {
+    const recipient = this.playerById(recipientId);
+    if (!recipient.character) return amount;
+    const modify = abilityFor(recipient.character)?.modifyBankPayout;
+    return modify ? modify(this, { holder: recipient, amount }) : amount;
+  }
+
+  // Reverts H's Hostile Takeover (abilities/kingpin.js) at the end of the round
+  // it was cast in -- restores whatever ownership record the tile had before
+  // (or unowned, if it had none), including each side's properties list.
+  revertHostileTakeover() {
+    const { tileId, previousOwnership } = this.hostileTakeover;
+    const current = this.ownership[tileId];
+    if (current) {
+      const currentOwner = this.playerById(current.ownerId);
+      if (currentOwner) currentOwner.properties = currentOwner.properties.filter((id) => id !== tileId);
+    }
+    if (previousOwnership) {
+      this.ownership[tileId] = previousOwnership;
+      const prevOwner = this.playerById(previousOwnership.ownerId);
+      if (prevOwner && !prevOwner.properties.includes(tileId)) prevOwner.properties.push(tileId);
+    } else {
+      delete this.ownership[tileId];
+    }
+    this.hostileTakeover = null;
+  }
+
+  // Generic passive-ability dispatch -- calls every active player's ability
+  // module's handler for `hookName`, if it has one, keeping Room.js itself
+  // agnostic of what any specific character's passive actually does (see
+  // abilities/index.js for the module shape). `payload` is whatever context
+  // that hook needs (e.g. { tile, owner, payer, rent } for a rent payment).
+  triggerPassive(hookName, payload) {
+    for (const holder of this.activePlayers()) {
+      if (!holder.character) continue;
+      const handler = abilityFor(holder.character)?.passives?.[hookName];
+      if (handler) handler(this, { ...payload, holder });
+    }
+  }
+
+  // Generic active-ability dispatch -- every character's active goes through
+  // this same path (Barricade, Curse, Detonate, Hostile Takeover, Wrecking
+  // Tour, Copy Cat), so cooldown gating/arming is handled once instead of once
+  // per character. The ability module's own active() does its own targeting/
+  // validation and returns { error } to reject, or { ok: true, ...extra } on
+  // success -- `extra` is passed to a variable activeCooldown function so e.g.
+  // Detonate/Copy Cat's cooldown can depend on what the active actually did.
+  useAbility(playerId, params) {
+    const player = this.playerById(playerId);
+    if (!player || player.bankrupt || player.left) return { error: "You can't use an ability right now" };
+    if (!this.started) return { error: "Game hasn't started" };
+    if (!player.character) return { error: "No character selected" };
+    const ability = abilityFor(player.character);
+    if (!ability) return { error: "Unknown character" };
+    if (player.abilityCooldown > 0) {
+      return { error: `On cooldown for ${player.abilityCooldown} more of your turns` };
+    }
+    const result = ability.active(this, player, params);
+    if (result?.error) return result;
+    player.abilityCooldown = typeof ability.activeCooldown === "function"
+      ? ability.activeCooldown(result)
+      : ability.activeCooldown;
+    return { ok: true, ...result };
   }
 
   // A property can only be traded while it's undeveloped and unmortgaged -- avoids
@@ -1136,8 +1409,12 @@ export class Room {
       toPlayer.properties = toPlayer.properties.filter((id) => id !== tileId);
       fromPlayer.properties.push(tileId);
     }
-    if (trade.offerMoney > 0) this.transferMoney(trade.fromId, trade.toId, trade.offerMoney);
-    if (trade.requestMoney > 0) this.transferMoney(trade.toId, trade.fromId, trade.requestMoney);
+    if (trade.offerMoney > 0) {
+      this.settleEarning(trade.toId, () => this.transferMoney(trade.fromId, trade.toId, trade.offerMoney));
+    }
+    if (trade.requestMoney > 0) {
+      this.settleEarning(trade.fromId, () => this.transferMoney(trade.toId, trade.fromId, trade.requestMoney));
+    }
     if (trade.offerJailCard) {
       fromPlayer.holdingFreeCard = false;
       toPlayer.holdingFreeCard = true;
@@ -1148,6 +1425,12 @@ export class Room {
     }
 
     this.pushLog(`${fromPlayer.name} and ${toPlayer.name} completed a trade.`);
+    // Z's trade cut (characters.md): cash on both sides plus the listed board
+    // price of every property changing hands, not just the coins involved.
+    const propertyValue = [...trade.offerProperties, ...trade.requestProperties]
+      .reduce((sum, tileId) => sum + (this._board[tileId]?.price || 0), 0);
+    const totalTradeValue = trade.offerMoney + trade.requestMoney + propertyValue;
+    this.triggerPassive("onTradeCompleted", { fromId: trade.fromId, toId: trade.toId, totalTradeValue });
     // No bankruptcy check here -- the funds check just above already guarantees
     // neither side goes negative from this trade itself.
     this.pruneStaleTrades();
@@ -1258,9 +1541,23 @@ export class Room {
     this.clearTurnTimer();
     this.pendingAction = null;
     if (this.activePlayers().length <= 1) return;
+    // Ability cooldowns count down in the holder's own turns only (decisions.md)
+    // -- tick the ending player's here, before turnIndex moves off them.
+    const endingPlayer = this.currentPlayer();
+    if (endingPlayer?.abilityCooldown > 0) endingPlayer.abilityCooldown -= 1;
     do {
       this.turnIndex = (this.turnIndex + 1) % this.players.length;
+      // A "round" is one full lap of the seat array, regardless of which seats
+      // are actually active (decisions.md) -- crossing back to seat 0 always
+      // marks a new one, even mid-loop while skipping bankrupt/left seats.
+      if (this.turnIndex === 0) this.round += 1;
     } while (this.players[this.turnIndex].bankrupt || this.players[this.turnIndex].left);
+    // Proactively drop an expired barricade/curse so exposed state (toState,
+    // for the client's wall/curse indicators) doesn't lag stale until the next
+    // move/payout happens to trip their own lazy round checks.
+    if (this.barricade && this.barricade.roundPlaced !== this.round) this.barricade = null;
+    this.activeCurses = this.activeCurses.filter((c) => c.roundPlaced === this.round);
+    if (this.hostileTakeover && this.hostileTakeover.roundPlaced !== this.round) this.revertHostileTakeover();
     this.lastRoll = null;
     this.lastCard = null;
     this.canRollAgain = true;
@@ -1291,6 +1588,7 @@ export class Room {
       hostId: this.hostId,
       started: this.started,
       turnIndex: this.turnIndex,
+      round: this.round,
       players: this.players.map(({ token, graceTimer, ...pub }) => pub),
       ownership: this.ownership,
       log: this.log.slice(0, 20),
@@ -1303,6 +1601,11 @@ export class Room {
       auctions: this.auctions.map(({ timer, ...pub }) => pub),
       canRollAgain: this.canRollAgain,
       board: this._board,
+      // Character identity roster (id/name/portrait), same "expose the static
+      // reference data once" role as board -- lets the client show a display
+      // name for player.character without duplicating the roster itself.
+      characters: CHARACTERS,
+      abilities: ABILITY_DISPLAY_INFO,
       rollSeq: this.rollSeq,
       cardSeq: this.cardSeq,
       jailSeq: this.jailSeq,
@@ -1312,6 +1615,13 @@ export class Room {
       lastWastaAttempt: this.lastWastaAttempt,
       rules: this.rules,
       vacationPot: this.vacationPot,
+      barricade: this.barricade,
+      barricadeSeq: this.barricadeSeq,
+      lastBarricadeStop: this.lastBarricadeStop,
+      activeCurses: this.activeCurses,
+      hostileTakeover: this.hostileTakeover,
+      wreckingTourSeq: this.wreckingTourSeq,
+      lastWreckingTour: this.lastWreckingTour,
     };
   }
 
@@ -1324,6 +1634,7 @@ export class Room {
       hostId: this.hostId,
       started: this.started,
       turnIndex: this.turnIndex,
+      round: this.round,
       players: this.players.map(({ graceTimer, ...rest }) => rest),
       ownership: this.ownership,
       surpriseDeck: this.surpriseDeck,
@@ -1346,6 +1657,13 @@ export class Room {
       lastWastaAttempt: this.lastWastaAttempt,
       rules: this.rules,
       vacationPot: this.vacationPot,
+      barricade: this.barricade,
+      barricadeSeq: this.barricadeSeq,
+      lastBarricadeStop: this.lastBarricadeStop,
+      activeCurses: this.activeCurses,
+      hostileTakeover: this.hostileTakeover,
+      wreckingTourSeq: this.wreckingTourSeq,
+      lastWreckingTour: this.lastWreckingTour,
     };
   }
 
@@ -1366,6 +1684,7 @@ export class Room {
     if (snapshot.vacationPot !== undefined) room.vacationPot = snapshot.vacationPot;
     room.started = snapshot.started;
     room.turnIndex = snapshot.turnIndex;
+    room.round = snapshot.round || 0;
     room.players = snapshot.players.map((p) => ({ ...p, graceTimer: null }));
     room.ownership = snapshot.ownership;
     room.surpriseDeck = snapshot.surpriseDeck;
@@ -1389,6 +1708,13 @@ export class Room {
     room.jailFromTileId = snapshot.jailFromTileId ?? null;
     room.wastaSeq = snapshot.wastaSeq || 0;
     room.lastWastaAttempt = snapshot.lastWastaAttempt || null;
+    room.barricade = snapshot.barricade || null;
+    room.barricadeSeq = snapshot.barricadeSeq || 0;
+    room.lastBarricadeStop = snapshot.lastBarricadeStop || null;
+    room.activeCurses = snapshot.activeCurses || [];
+    room.hostileTakeover = snapshot.hostileTakeover || null;
+    room.wreckingTourSeq = snapshot.wreckingTourSeq || 0;
+    room.lastWreckingTour = snapshot.lastWreckingTour || null;
 
     for (const player of room.players) {
       if (!player.connected && !player.left && !player.bankrupt) {

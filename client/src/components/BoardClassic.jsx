@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { socket } from "../socket";
-import { playMoveSwoosh, primeAudio } from "../sfx";
+import { playMoveSwoosh, playSellBuilding, primeAudio } from "../sfx";
 import Dice from "./Dice";
 import PlayerToken from "./PlayerToken";
 import PropertyCardDetail from "./PropertyCardDetail";
@@ -207,7 +207,7 @@ function HoldingCornerArt({ name, visitingLabel }) {
   );
 }
 
-function ClassicTile({ tile, owned, players, sideLen, onSelect, isSelected }) {
+function ClassicTile({ tile, owned, players, sideLen, onSelect, isSelected, targeting }) {
   const { id, name, price, amount, groupColor, type, visitingLabel } = tile;
   const { edge, row, col } = getLayout(id, sideLen);
   const hasIcon = type === "treasure" || type === "surprise" || type === "tax" || type === "transit" || type === "rest" || type in CORNER_ICON_SRC;
@@ -219,7 +219,11 @@ function ClassicTile({ tile, owned, players, sideLen, onSelect, isSelected }) {
   const ownerColor = owned?.ownerId
     ? (owned.mortgaged ? "#5a5a5a" : players.find((p) => p.id === owned.ownerId)?.color)
     : null;
-  const isClickable = CLICKABLE_TYPES.includes(type);
+  // While an ability's tile-targeting is active (App.jsx's shared targeting
+  // state machine), every tile becomes clickable -- e.g. Barricade can target
+  // a tax/rest/corner tile that's never otherwise selectable -- and the
+  // server's own validation is what actually rejects an invalid pick.
+  const isClickable = CLICKABLE_TYPES.includes(type) || targeting;
 
   const badgeValue = price != null ? price : amount;
   const houses = owned?.houses || 0;
@@ -227,7 +231,7 @@ function ClassicTile({ tile, owned, players, sideLen, onSelect, isSelected }) {
 
   return (
     <div
-      className={`cv2-tile ${isCorner ? "cv2-corner" : `cv2-side-${edge}`}${type === "transit" ? " cv2-transit" : ""}${type === "rest" ? " cv2-rest" : ""}${isClickable ? " cv2-tile-clickable" : ""}${isSelected ? " cv2-tile-selected" : ""}`}
+      className={`cv2-tile ${isCorner ? "cv2-corner" : `cv2-side-${edge}`}${type === "transit" ? " cv2-transit" : ""}${type === "rest" ? " cv2-rest" : ""}${isClickable ? " cv2-tile-clickable" : ""}${isSelected ? " cv2-tile-selected" : ""}${targeting ? " cv2-tile-targetable" : ""}`}
       style={{ gridRow: row, gridColumn: col, ...(!isCorner && ownerColor ? { background: ownerColor } : {}) }}
       onClick={isClickable ? (e) => onSelect(id, e.currentTarget, edge) : undefined}
     >
@@ -366,8 +370,8 @@ function TokenLayer({ players, sideLen, trackCenters, cellPct, holdingTileId, cu
   );
 }
 
-export default function BoardClassic({ state, myId, tokenMoving, onTokenMovingChange }) {
-  const { board, ownership, players, lastRoll, turnIndex, rollSeq, jailSeq, jailedPlayerId, jailFromTileId } = state;
+export default function BoardClassic({ state, myId, tokenMoving, onTokenMovingChange, tileTargeting, onTileTarget }) {
+  const { board, ownership, players, lastRoll, turnIndex, rollSeq, jailSeq, jailedPlayerId, jailFromTileId, wreckingTourSeq, lastWreckingTour } = state;
 
   // Rim tracks (row 1 / row N / col 1 / col N) are wider than inner tracks so
   // tiles take up more of the board and the center shrinks. Tiles become
@@ -421,6 +425,12 @@ export default function BoardClassic({ state, myId, tokenMoving, onTokenMovingCh
   useEffect(() => {
     setConfirmingBankruptcy(false);
   }, [turnIndex]);
+
+  // Don't let an already-open property card sit on screen at the same time as
+  // a fresh ability-targeting prompt -- close it the moment targeting starts.
+  useEffect(() => {
+    if (tileTargeting) closeTile();
+  }, [tileTargeting]);
   const boardRef = useRef(null);
   const cardRef = useRef(null);
   const selectedTileElRef = useRef(null);
@@ -459,6 +469,18 @@ export default function BoardClassic({ state, myId, tokenMoving, onTokenMovingCh
       return;
     }
     openTile(tileId, tileEl, edge);
+  }
+
+  // Routes a tile click to ability-targeting instead of the normal open/close
+  // card behavior while tileTargeting is active (App.jsx's shared targeting
+  // state machine) -- the property card and targeting are mutually exclusive,
+  // never both from the same click.
+  function handleTileClick(tileId, tileEl, edge) {
+    if (tileTargeting) {
+      onTileTarget?.(tileId);
+      return;
+    }
+    selectTile(tileId, tileEl, edge);
   }
 
   // Positions the card OFFSET from the tile that opened it -- never on top
@@ -697,6 +719,49 @@ export default function BoardClassic({ state, myId, tokenMoving, onTokenMovingCh
     return () => timers.forEach(clearTimeout);
   }, [players, rollSeq, jailSeq, jailedPlayerId, jailFromTileId, state.pendingAction, board.length, sideLen, trackCenters]);
 
+  // SD's Wrecking Tour (decisions.md): player.position now genuinely changes
+  // to the tour's destination (see conductor.js), so the generic move-
+  // detection effect above already animates SD's token gliding there same as
+  // any other move -- no custom glide code needed for that part. All that's
+  // left here is timing the existing sell-house/hotel sound to roughly when
+  // the bus reaches each demolished tile, which the generic move effect has
+  // no notion of.
+  const prevWreckingTourSeqRef = useRef(wreckingTourSeq);
+  useEffect(() => {
+    if (wreckingTourSeq === prevWreckingTourSeqRef.current) return;
+    prevWreckingTourSeqRef.current = wreckingTourSeq;
+    const tour = lastWreckingTour;
+    if (!tour || !tour.demolished.length) return;
+    const { startTileId, path, demolished } = tour;
+    const destinationTileId = path[path.length - 1];
+    const timers = [];
+
+    // Demolished tiles don't line up with leg boundaries (a leg can span
+    // several tiles at once), so this estimates each one's arrival time
+    // proportionally within its leg, using the exact per-tile path the
+    // server already computed and the same leg math the generic move effect
+    // uses for this same from/to -- close enough to play the sound roughly
+    // as the bus reaches that tile, without needing tile-by-tile glide steps.
+    const legs = computeLegWaypoints(startTileId, destinationTileId, sideLen, board.length, false);
+    let elapsedMs = 0;
+    const arrivalDelayByPathIndex = [];
+    legs.forEach((leg) => {
+      const glideMs = Math.min(LEG_MAX_MS, Math.max(LEG_MIN_MS, leg.tileCount * MS_PER_TILE));
+      const perTileMs = glideMs / leg.tileCount;
+      for (let t = 0; t < leg.tileCount; t++) {
+        elapsedMs += perTileMs;
+        arrivalDelayByPathIndex.push(elapsedMs);
+      }
+    });
+    demolished.forEach(({ tileId }) => {
+      const pathIndex = path.indexOf(tileId);
+      const delay = pathIndex >= 0 ? arrivalDelayByPathIndex[pathIndex] : null;
+      if (delay != null) timers.push(setTimeout(() => playSellBuilding(), delay));
+    });
+
+    return () => timers.forEach(clearTimeout);
+  }, [wreckingTourSeq, lastWreckingTour, board.length, sideLen]);
+
   // Tracks whether the dice's own jump/spin animation (1s, see dice.css
   // `d3-jump`) is still playing for the roll that just happened, so the
   // center action button doesn't swap to "End Turn" out from under the dice
@@ -764,8 +829,9 @@ export default function BoardClassic({ state, myId, tokenMoving, onTokenMovingCh
             owned={ownership[tile.id]}
             players={players}
             sideLen={sideLen}
-            onSelect={selectTile}
+            onSelect={handleTileClick}
             isSelected={selectedTileId === tile.id}
+            targeting={tileTargeting}
           />
         ))}
 

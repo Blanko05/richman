@@ -1581,6 +1581,111 @@
   margin-right: calc(-1 * var(--gs-gap));
 }
 
+/* ── CHARACTER PANEL (left panel, above My Properties -- sandbox mode) ── */
+
+.character-panel {
+  background: var(--panel);
+  border: 3px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 4px 4px 0 var(--border);
+  padding: 12px 14px;
+  color: var(--text);
+  flex-shrink: 0;
+  margin-bottom: 12px;
+}
+
+.character-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.character-panel-name {
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  color: var(--accent);
+}
+
+.character-panel-cooldown {
+  font-size: 12px;
+  color: var(--text-dim);
+}
+.character-panel-cooldown.ready {
+  color: #2ecc71;
+  font-weight: 700;
+}
+
+.character-panel-body {
+  margin-bottom: 10px;
+}
+.character-panel-body p {
+  margin: 0 0 6px;
+  font-size: 11.5px;
+  line-height: 1.45;
+  color: var(--text);
+}
+.character-panel-body p:last-child { margin-bottom: 0; }
+.character-panel-cooldown-note {
+  color: var(--text-dim) !important;
+  font-style: italic;
+}
+
+.character-panel-targeting {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
+  border: 2px dashed var(--accent);
+  border-radius: 8px;
+  padding: 8px 10px;
+}
+.character-panel-targeting-hint {
+  margin: 0;
+  font-size: 11.5px;
+  font-weight: 700;
+  color: var(--accent);
+}
+.character-panel-cancel {
+  padding: 6px 12px;
+  background: transparent;
+  border: 2px solid var(--border);
+  border-radius: 6px;
+  color: var(--text);
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.character-panel-cancel:hover { background: rgba(180,30,30,0.2); }
+
+.character-panel-activate {
+  width: 100%;
+  padding: 9px 16px;
+  background: var(--accent);
+  border: 2.5px solid var(--border);
+  border-radius: 8px;
+  color: var(--accent-ink);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 1px;
+  cursor: pointer;
+  box-shadow: 3px 3px 0 var(--border);
+  transition: transform 0.08s ease, box-shadow 0.08s ease, opacity 0.15s;
+}
+.character-panel-activate:hover:not(:disabled) { opacity: 0.9; }
+.character-panel-activate:active:not(:disabled) { transform: translate(1px, 1px); box-shadow: 2px 2px 0 var(--border); }
+.character-panel-activate:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.character-panel-error {
+  margin: 8px 0 0;
+  font-size: 11px;
+  color: #e74c3c;
+}
+
 .players-panel-room {
   background: var(--panel);
   border: 3px solid var(--border);
@@ -2674,6 +2779,25 @@ select {
 }
 .panel-player-row.bankrupt { opacity: 0.45; }
 .panel-player-row.left    { opacity: 0.35; }
+
+/* Sandbox mode only -- clicking a row rebinds this tab to that seat. */
+.panel-player-row.switchable { cursor: pointer; }
+.panel-player-row.switchable:hover { border-color: var(--accent); transform: translate(-1px, -1px); box-shadow: 5px 5px 0 var(--border); }
+.panel-player-row.switchable:active { transform: translate(1px, 1px); box-shadow: 3px 3px 0 var(--border); }
+
+/* Ability player-targeting active -- takes over row clicks from switchable
+   (target, not switch) and gets its own pulsing highlight, matching the
+   board's .cv2-tile-targetable. */
+.panel-player-row.targetable {
+  cursor: pointer;
+  outline: 2px dashed var(--accent);
+  outline-offset: -2px;
+  animation: panel-row-targetable-pulse 1.4s ease-in-out infinite;
+}
+@keyframes panel-row-targetable-pulse {
+  0%, 100% { box-shadow: 4px 4px 0 var(--border), inset 0 0 0 0 color-mix(in srgb, var(--accent) 55%, transparent); }
+  50%      { box-shadow: 4px 4px 0 var(--border), inset 0 0 12px 2px color-mix(in srgb, var(--accent) 55%, transparent); }
+}
 
 .panel-player-dot {
   width: 30px;
