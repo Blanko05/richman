@@ -58,7 +58,9 @@ test("active: Curse redirects a cursed owner's rent to Z, unaffected by any othe
   enforcerPlayer.character = "Z";
   ownTile(room, "p1", 1); // سحاب, not in anyone's turf
 
+  room.turnIndex = 2; // abilities are turn-gated -- cast on Z's own turn
   const curseResult = room.useAbility("p2", { targetId: "p1" });
+  room.turnIndex = 0;
   assert.deepEqual(curseResult, { ok: true, targetId: "p1" });
   assert.equal(enforcerPlayer.abilityCooldown, 7);
 
@@ -86,7 +88,9 @@ test("active: Curse redirect applies AFTER D's turf cut -- Z gets the owner's ne
   enforcerPlayer.character = "Z";
   ownTile(room, "p1", 13); // اغوار الشمال -- D's turf
 
+  room.turnIndex = 3; // abilities are turn-gated -- cast on Z's own turn
   room.useAbility("p3", { targetId: "p1" }); // curse the owner
+  room.turnIndex = 0;
 
   const rent = room.calcRent(room._board[13], room.ownership[13]);
   const cut = Math.floor(rent * 0.3);
@@ -112,7 +116,9 @@ test("active: Curse redirects the Start-passing bonus and card 'collect' effects
   const target = room.playerById("p0");
   const enforcerPlayer = room.playerById("p1");
   enforcerPlayer.character = "Z";
+  room.turnIndex = 1; // abilities are turn-gated -- cast on Z's own turn
   room.useAbility("p1", { targetId: "p0" });
+  room.turnIndex = 0;
 
   const targetBefore = target.balance;
   const enforcerBefore = enforcerPlayer.balance;
@@ -142,23 +148,52 @@ test("active: Curse rejects an invalid or already-bankrupt target", () => {
   assert.equal(room.useAbility("p0", { targetId: "nope" }).error, "Invalid target");
 });
 
-test("active: Curse expires at the end of the round it was cast in", () => {
+test("active: Curse expires once Z's own next turn comes around", () => {
   const room = makeRoom(["Target", "Enforcer", "Third"]);
   after(() => cleanup(room));
   const target = room.playerById("p0");
   const enforcerPlayer = room.playerById("p1");
   enforcerPlayer.character = "Z";
+  room.turnIndex = 1; // abilities are turn-gated -- cast on Z's own turn
   room.useAbility("p1", { targetId: "p0" });
 
-  room.endTurn(); // p0 -> p1
   room.endTurn(); // p1 -> p2
-  room.endTurn(); // p2 -> p0 (wraps, round increments, curse should expire)
+  assert.equal(room.activeCurses.length, 1, "still active -- not yet Z's own turn again");
+  room.endTurn(); // p2 -> p0
+  assert.equal(room.activeCurses.length, 1, "still active -- one full lap always takes this long once casting is turn-gated");
+  room.endTurn(); // p0 -> p1 (Z's own turn again -- curse should expire right here)
   assert.deepEqual(room.activeCurses, []);
 
   const before = target.balance;
   target.position = 46;
   room.movePlayer(target, 2); // Start-landing bonus, 400
   assert.equal(target.balance, before + 400, "curse expired -- target keeps their own earnings again");
+});
+
+test("active: Curse lasts a full lap even when cast by the LAST seat in turn order -- not just until the next global round boundary", () => {
+  // Regression: expiry used to be gated on a global room.round counter, which
+  // made a last-seat caster's own curse expire the instant THEIR turn ended
+  // (ending their turn is what wraps the seat pointer back to 0), robbing
+  // them of almost the entire round other players got. Expiry is now
+  // caster-relative, so every caster gets the same full lap regardless of
+  // seat position.
+  const room = makeRoom(["Target", "Second", "Enforcer"]);
+  after(() => cleanup(room));
+  const target = room.playerById("p0");
+  const enforcerPlayer = room.playerById("p2"); // last seat
+  enforcerPlayer.character = "Z";
+  room.turnIndex = 2; // it's Z's turn
+  room.useAbility("p2", { targetId: "p0" });
+
+  room.endTurn(); // p2 -> p0 (wraps to seat 0 -- the OLD bug expired the curse right here)
+  assert.equal(room.activeCurses.length, 1, "still active -- caster-relative expiry, not a global round boundary");
+
+  const before = target.balance;
+  const enforcerBefore = enforcerPlayer.balance;
+  target.position = 46;
+  room.movePlayer(target, 2); // Start-landing bonus, 400
+  assert.equal(target.balance, before, "still cursed after a full lap -- Z keeps the redirected earnings");
+  assert.equal(enforcerPlayer.balance, enforcerBefore + 400);
 });
 
 test("active: a second caster cannot curse a target who's already cursed by someone else", () => {
@@ -170,6 +205,7 @@ test("active: a second caster cannot curse a target who's already cursed by some
   room.useAbility("p0", { targetId: "p2" }); // Z curses Victim first
   assert.equal(room.activeCurses.length, 1);
 
+  room.turnIndex = 1; // abilities are turn-gated -- cast on SE's own turn
   const result = room.useAbility("p1", { copyFromId: "p0", params: { targetId: "p2" } }); // SE tries to also curse Victim
   assert.equal(result.error, "t2 is already cursed by someone else");
   assert.equal(room.activeCurses.length, 1, "the rejected attempt didn't add a second curse on the same target");
@@ -187,6 +223,7 @@ test("active: two independent curses can coexist -- Copy Cat's second Curse does
   fixerPlayer.character = "SE";
 
   room.useAbility("p0", { targetId: "p2" }); // Z curses VictimA
+  room.turnIndex = 1; // abilities are turn-gated -- cast on SE's own turn
   room.useAbility("p1", { copyFromId: "p0", params: { targetId: "p3" } }); // SE copies Curse onto VictimB
 
   assert.equal(room.activeCurses.length, 2);
@@ -211,6 +248,7 @@ test("active: a mutual curse (A curses B, B curses A) doesn't ping-pong -- each 
   fixerPlayer.character = "SE";
 
   room.useAbility("p0", { targetId: "p1" }); // Z curses SE
+  room.turnIndex = 1; // abilities are turn-gated -- cast on SE's own turn
   room.useAbility("p1", { copyFromId: "p0", params: { targetId: "p0" } }); // SE copies Curse back onto Z
   assert.equal(room.activeCurses.length, 2);
 

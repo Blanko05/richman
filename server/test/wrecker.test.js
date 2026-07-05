@@ -84,17 +84,46 @@ test("active: Detonate fully wipes a hotel to an empty lot and arms the 9-turn c
   assert.equal(wreckerPlayer.abilityCooldown, 9);
 });
 
-test("active: Detonate on an empty lot destroys nothing but still arms the shortest (4-turn) cooldown", () => {
+test("active: Detonate on an owned empty lot force-mortgages it instead, for free, and still arms the shortest (4-turn) cooldown", () => {
+  const room = makeRoom(["Wrecker", "Victim"]);
+  after(() => cleanup(room));
+  const wreckerPlayer = room.playerById("p0");
+  const victim = room.playerById("p1");
+  wreckerPlayer.character = "Y";
+  room.debugGrantGroup("p1", "pink"); // undeveloped
+  const victimBefore = victim.balance;
+
+  const result = room.useAbility("p0", { tileId: 1 });
+
+  assert.deepEqual(result, { ok: true, levelsRemoved: 0, forcedMortgage: true });
+  assert.equal(room.ownership[1].mortgaged, true);
+  assert.equal(victim.balance, victimBefore, "no payout -- punitive, not a voluntary mortgage");
+  assert.equal(wreckerPlayer.abilityCooldown, 4);
+});
+
+test("active: Detonate rejects an already-mortgaged target -- nothing left to force", () => {
+  const room = makeRoom(["Wrecker", "Victim"]);
+  after(() => cleanup(room));
+  room.playerById("p0").character = "Y";
+  room.debugGrantGroup("p1", "pink");
+  room.mortgageProperty("p1", 1);
+
+  const result = room.useAbility("p0", { tileId: 1 });
+  assert.equal(result.error, "Nothing left to destroy on this property");
+  assert.equal(room.playerById("p0").abilityCooldown, 0, "a rejection arms no cooldown");
+});
+
+test("active: Detonate's forced mortgage also triggers Y's own passive, same as a real mortgage would", () => {
   const room = makeRoom(["Wrecker", "Victim"]);
   after(() => cleanup(room));
   const wreckerPlayer = room.playerById("p0");
   wreckerPlayer.character = "Y";
-  room.debugGrantGroup("p1", "pink"); // undeveloped
+  room.debugGrantGroup("p1", "pink");
 
-  const result = room.useAbility("p0", { tileId: 1 });
+  const before = wreckerPlayer.balance;
+  room.useAbility("p0", { tileId: 1 });
 
-  assert.deepEqual(result, { ok: true, levelsRemoved: 0 });
-  assert.equal(wreckerPlayer.abilityCooldown, 4);
+  assert.equal(wreckerPlayer.balance, before + 50);
 });
 
 test("active: Detonate also triggers Y's own passive for the building it just destroyed", () => {

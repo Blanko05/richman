@@ -9,8 +9,10 @@
 // Room.js already uses for house-sale refunds/mortgage values.
 //
 // Active: Barricade places a wall that's a one-shot trap, not a lasting wall
-// -- it catches only the FIRST player whose forward movement crosses it that
-// round, then deactivates immediately (or expires unused at round end). See
+// -- it catches only the FIRST player whose forward movement crosses it (the
+// caster is immune, see Room.applyBarricade), then deactivates immediately,
+// or expires unused once D's own next turn comes around (decisions.md's
+// "Round scoping" -- caster-relative, not a global round boundary). See
 // Room.applyBarricade for the actual movement-interception math (forward
 // movement only; decisions.md).
 const TURF_TILES = new Set([13, 14, 16]); // salmonRight -- characters.md
@@ -19,7 +21,7 @@ export const don = {
   id: "D",
   activeName: "Barricade",
   description: "Places a wall on a chosen tile -- traps the first player whose forward movement carries them past it, stopping them there instead, then deactivates.",
-  passiveDescription: "Takes a 30% cut of rent collected on his turf (tiles 13/14/16) and 50% of every tax payment anywhere on the board.",
+  passiveDescription: "Takes a 30% cut of rent collected on his turf (اغوار الشمال, نهر الميراندا, اغوار الجنوب) and 50% of every tax payment anywhere on the board.",
   cooldownLabel: "10 turns",
   targetType: "tile",
   activeCooldown: 10,
@@ -35,7 +37,7 @@ export const don = {
   active(room, caster, { tileId } = {}) {
     const tile = room._board[tileId];
     if (!tile) return { error: "Invalid tile" };
-    room.barricade = { tileId, roundPlaced: room.round };
+    room.barricade = { tileId, casterId: caster.id };
     room.pushLog(`${caster.name} placed a barricade at ${tile.name}.`);
     return { ok: true, tileId };
   },

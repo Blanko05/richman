@@ -774,6 +774,66 @@
   transform: none;
 }
 
+/* ── CHARACTER PICKER (Characters-mode waitroom only) ────── */
+/* Text cards, not image swatches -- no portrait art exists yet
+   (characters.md: "Real portraits are decided separately"). Same
+   selected/taken language as the icon picker above, just a card grid
+   instead of a row of circular swatches. */
+
+.lobby-character-picker {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 10px;
+}
+
+.lobby-character-card {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  text-align: left;
+  background: var(--panel);
+  border: 2.5px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 10px;
+  cursor: pointer;
+  transition: transform 0.1s, box-shadow 0.1s;
+}
+.lobby-character-card:hover:not(:disabled) {
+  transform: translate(-1px, -1px);
+  box-shadow: 2px 2px 0 var(--border);
+}
+.lobby-character-card:active:not(:disabled) { transform: none; box-shadow: none; }
+
+.lobby-character-card-name {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.3px;
+  color: var(--accent);
+}
+.lobby-character-card-blurb {
+  font-size: 10.5px;
+  line-height: 1.4;
+  color: var(--text-dim);
+}
+.lobby-character-card-blurb strong { color: var(--text); }
+.lobby-character-card-cooldown {
+  font-size: 10px;
+  font-style: italic;
+  color: var(--text-dim);
+}
+
+.lobby-character-card.selected {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 45%, transparent);
+}
+.lobby-character-card.taken {
+  opacity: 0.35;
+  filter: grayscale(1);
+  cursor: not-allowed;
+}
+.lobby-character-card.taken:hover { transform: none; box-shadow: none; }
+
 .error { color: var(--danger); font-size: 13px; font-weight: 700; }
 
 .game-screen {

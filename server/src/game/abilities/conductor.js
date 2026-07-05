@@ -16,10 +16,16 @@
 // targeted ability, so the no-self-targeting rule doesn't come into it (see
 // decisions.md). SD actually ends the tour AT tile 6 -- his position updates
 // and the tile's normal landing effects resolve (rent, or an unowned-station
-// buy prompt), the same shape as a card's "advanceTo" effect. Since abilities
-// aren't turn-gated, this refuses to run while ANY pendingAction is already
-// open (not just SD's) -- resolveTile could otherwise clobber someone else's
-// in-progress decision (e.g. their own unresolved buy prompt).
+// buy prompt), the same shape as a card's "advanceTo" effect. Refuses to run
+// while ANY pendingAction is already open (not just SD's own) -- even on your
+// own turn, resolveTile here could otherwise clobber an in-progress decision
+// from earlier this same turn (e.g. your own unresolved buy prompt).
+//
+// Can't be activated while the caster is in the Holding Pen -- there's no bus
+// to send out while jailed. `caster` here is passed straight through by
+// Copy Cat too (fixer.js), so this same check covers SE copying Wrecking
+// Tour while SE himself is in Holding, without any special-casing. User's
+// call (decisions.md).
 import { TILE_TYPES, TOTAL_TILES } from "../board.js";
 
 const STATION_TOLL = 50;
@@ -48,6 +54,7 @@ export const conductor = {
     return rent;
   },
   active(room, caster) {
+    if (caster.inHolding) return { error: "Can't send out Wrecking Tour from the Holding Pen" };
     if (room.pendingAction) return { error: "Resolve the current action first" };
     const startTileId = caster.position;
     const path = [];

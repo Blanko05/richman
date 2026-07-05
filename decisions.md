@@ -74,6 +74,28 @@ directly, sometimes with Claude proposing a specific formalization of it.
   what was built. The cooldown tiers in characters.md (4-9 turns) describe
   how much was destroyed by that one wipe, not a per-level cost. Asked;
   user picked this over "one level per use."
+- **Detonate on an already-empty lot force-mortgages it instead of being a
+  no-op.** Found during playtesting that the original design (destroys
+  nothing, just burns the shortest cooldown tier) wasted the ability against
+  a houseless target. Asked three sub-questions, user picked the same
+  (recommended) answer each time:
+  - **No payout to the owner** -- unlike a real `mortgageProperty()` call,
+    which pays the owner half the property's price, this is punitive (an
+    attack ability), so it's free -- the owner just loses the property's
+    income with nothing in return.
+  - **Already-mortgaged target is rejected outright** ("Nothing left to
+    destroy on this property"), not a silent no-op -- consistent with how
+    self-targeting is rejected elsewhere, and a genuinely different case from
+    "empty lot, not yet mortgaged" (where Detonate now has real work to do).
+  - **Cooldown stays at the existing shortest (4-turn) tier** -- no new tier
+    needed; force-mortgaging IS the new "empty lot" case, replacing the old
+    no-op at the same cooldown cost.
+  - Implementation detail, not separately asked: the forced mortgage also
+    manually fires the `onMortgage` passive hook (`wrecker.js`), the same way
+    the demolish branch already manually fires `onDemolish` -- so Y still
+    collects his own $50 cut for an effect that didn't go through the real
+    `mortgageProperty()` call. Follows the existing pattern rather than
+    introducing a new one.
 - **Barricade only intercepts forward movement** (dice rolls, forward
   movement cards). The two backward-movement cards (s6: -3, s12: -2) ignore
   any active barricade entirely. Asked; user picked this over "both
@@ -104,6 +126,18 @@ directly, sometimes with Claude proposing a specific formalization of it.
   explicit "regardless of where that money comes from" instruction
   literally rather than narrowing it; flagged here in case a narrower scope
   was actually intended.
+  - **Bug found in playtesting: one earning path was missed.**
+    `confirmCardMove`'s `advanceTo` branch (the "advance to Start Plaza and
+    collect 200" card) did `player.balance += 200` directly instead of
+    through `settleEarning` -- so a cursed player who drew that exact card
+    kept the 200 anyway, even though the normal dice-roll pass/land-on-Start
+    bonus (`Room.movePlayer`) already correctly redirected. Fixed by
+    wrapping that line in `settleEarning(player.id, () => { player.balance
+    += 200; }, { isBankPayout: true })`, matching every other bank-payout
+    call site. A reminder that "every balance increase routes through
+    settleEarning" is an invariant that has to be actively maintained, not
+    just true by construction -- any future direct `player.balance +=`
+    outside `settleEarning` is a bug of this exact shape.
 - **Curse redirect is implemented as an outer wrap spanning the WHOLE
   earning event** (`Room.settleEarning`), not a check at each individual
   balance increment. This was necessary, not just a style choice: cuts like
@@ -204,6 +238,32 @@ directly, sometimes with Claude proposing a specific formalization of it.
   seats are currently active/bankrupt/left. An effect lasting "the rest of
   the round" (Curse, Barricade) is active until this counter next
   increments. Asked; user picked this over "just until my own next turn."
+  **Superseded below** -- found unfair in playtesting and reversed to the
+  originally-rejected "own next turn" option.
+- **Reversal: round-scoped effects (Barricade, Curse, Hostile Takeover) now
+  expire "until the CASTER'S own next turn comes around," not the global
+  `room.round` boundary above.** Found during playtesting: the global
+  counter increments whenever the turn pointer wraps back to seat 0, which
+  is triggered by whichever player is LAST in turn order ending their own
+  turn -- so a last-seated caster's own effect expired the instant their own
+  turn ended, before anyone else got a chance to be caught by it, while a
+  first-seated caster got an almost-full lap. User's call: switch to
+  caster-relative expiry so every caster gets the same one-full-lap duration
+  regardless of seat position. `room.round` itself is untouched (still
+  tracked, still exposed in state/snapshot) -- only what gates Barricade/
+  Curse/Hostile-Takeover expiry changed, from `roundPlaced === room.round`
+  to comparing the caster's id against whoever's turn is starting, checked
+  in `endTurn` (`server/src/game/Room.js`). A caster going bankrupt or
+  leaving before their own next turn is a real edge case this introduces --
+  their seat is then skipped forever, so the normal endTurn check would
+  never fire again -- handled with a new `Room.clearAbilityEffectsFrom`
+  safety net called from both `checkBankruptcy` and `kickPlayer`. This also
+  simplified away two now-redundant lazy staleness checks that existed only
+  because the old global-round check could go stale mid-turn:
+  `applyBarricade`'s own `roundPlaced` guard and `settleEarning`'s curse
+  lookup's `roundPlaced === this.round` clause -- both removed, since
+  `endTurn` now proactively prunes expired entries before either ever runs
+  again.
 
 ## Implementation order
 
@@ -234,12 +294,14 @@ proposal, accepted by the user.
   `player.position` updates there and `resolveTile` runs normally (rent if
   someone else owns it, or the usual unowned-station buy prompt), the same
   shape as a card's `advanceTo` effect. User's call, overriding the earlier
-  assumption that SD would return to where he started. Since abilities
-  aren't turn-gated, `active()` now refuses to run at all while ANY
-  `pendingAction` is already open (not just SD's own) -- otherwise this new
-  `resolveTile` call could clobber another player's in-progress decision
-  (e.g. their own unresolved buy prompt). Claude's call, a direct consequence
-  of the position-ending decision, not separately asked.
+  assumption that SD would return to where he started. `active()` refuses to
+  run at all while ANY `pendingAction` is already open (originally to guard
+  against clobbering a DIFFERENT player's in-progress decision, back when
+  abilities weren't turn-gated -- now that they are (see below), this instead
+  guards against clobbering an unresolved decision of the CASTER'S OWN from
+  earlier the same turn, e.g. their own still-open buy prompt) -- otherwise
+  this `resolveTile` call could wipe it out. Claude's call, a direct
+  consequence of the position-ending decision, not separately asked.
   - Because `player.position` now genuinely changes, the **existing generic
     move-detection effect in BoardClassic.jsx animates the glide
     automatically** -- no custom token-glide code needed at all. The
@@ -277,6 +339,62 @@ proposal, accepted by the user.
   original characters.md wording ("any player... is stopped there instead,"
   read as unlimited); characters.md's Barricade section and don.js's
   description were updated to match.
+- **Barricade bug fix: the caster is immune to their own barricade.**
+  `applyBarricade` previously had no notion of who placed the wall, so D
+  (or SE, via Copy Cat) could trap himself crossing his own barricade,
+  springing and wasting it. Fixed by stamping `casterId` on `room.barricade`
+  (`don.js`) and skipping the intercept entirely when the mover's id matches
+  it (`Room.applyBarricade`) -- the caster passes through untouched and the
+  trap stays armed for the next real victim. Found during playtesting.
+
+## Post-implementation polish (playtesting round 2)
+
+- **Wrecking Tour can't be activated from the Holding Pen.** There's no bus
+  to send out while jailed. Implemented as `if (caster.inHolding) return
+  { error: ... }` at the top of `conductor.js`'s `active()` -- since `caster`
+  is passed straight through by Copy Cat too (`fixer.js`), this one check
+  automatically also blocks SE from copying Wrecking Tour while SE himself
+  is in Holding, even if the real SD is free. No special-casing needed for
+  the copied path. User's call.
+- **Abilities are now turn-gated -- reverses the earlier "abilities aren't
+  turn-gated" decision.** `Room.useAbility` now rejects with "Not your turn"
+  unless `playerId` matches `currentPlayer().id`, checked before the
+  character/cooldown checks. User's call. Consequences:
+  - Conductor.js's own `pendingAction` guard for Wrecking Tour (originally
+    written to stop a DIFFERENT player's ability from clobbering someone
+    else's in-progress decision, back when abilities could fire off-turn)
+    is still needed and unchanged -- it now instead guards against the
+    caster clobbering an unresolved decision of their OWN from earlier the
+    same turn (e.g. their own still-open buy prompt), since only the current
+    player can reach `active()` at all now.
+  - A direct consequence of turn-gating: since Barricade/Curse/Hostile
+    Takeover can now only ever be CAST on the caster's own turn, "until the
+    caster's own next turn comes around" (the caster-relative round-scoping
+    fix above) always means a genuine full lap from here on -- there's no
+    longer a way to cast one mid-lap and get a shorter-than-a-lap window.
+  - Every existing test that cast an ability from a player other than
+    whoever `room.turnIndex` pointed at needed `room.turnIndex` set to the
+    caster's own seat first (a plain field assignment, not `endTurn()`, to
+    avoid unrelated side effects like cooldown ticking) -- this was already
+    the established pattern from the round-scoping fairness tests, just
+    applied more broadly now.
+  - Exposed a real, unrelated latent bug while updating tests: a test in
+    `characterScaffolding.test.js` (`triggerPassive calls only active,
+    characterized players' matching hook`) temporarily overwrote
+    `ABILITIES.D`/`ABILITIES.Z` with fakes and then `delete`d them afterward
+    instead of restoring the real originals -- since `node:test` runs every
+    test in a file in one process, this permanently removed the real D/Z
+    abilities from the registry for any later test in that same file. Fixed
+    to snapshot and restore the real entries instead of deleting them.
+- **The two ability-cooldown-easing REST tiles now both use the same random
+  1-4 turn range** (previously 1-2, and previously only "عليكم الأمان" --
+  "استراحة محارب" was explicitly excluded as "a deliberately distinct
+  flavor"). User's call, reversing that exclusion: both tiles now share
+  identical behavior. `COOLDOWN_REST_TILE_NAME` (a single string) became
+  `COOLDOWN_REST_TILE_NAMES` (a `Set` of both names); the formula changed
+  from `1 + Math.floor(Math.random() * 2)` to `1 + Math.floor(Math.random()
+  * 4)`. The third REST-type tile (اجازة/Vacation) remains untouched by this
+  mechanic either way -- still name-scoped, not `TILE_TYPES.REST`-scoped.
 
 ## Process
 

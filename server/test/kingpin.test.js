@@ -5,8 +5,8 @@ import { makeRoom, cleanup } from "./helpers.js";
 // H -- The Kingpin. Passive: a shared landing counter across his turf zone
 // (tiles 37/38/39/41/44/45/47); every 3rd landing (regardless of whether it
 // pays rent) triggers a 90% bank-mediated cut, but only on landings that
-// actually owe rent. Active: Hostile Takeover seizes an ownable tile for the
-// rest of the round, then reverts exactly.
+// actually owe rent. Active: Hostile Takeover seizes an ownable tile until
+// H's own next turn comes around, then reverts exactly.
 
 function ownTile(room, playerId, tileId, houses = 0) {
   room.ownership[tileId] = { ownerId: playerId, houses };
@@ -81,7 +81,7 @@ test("passive: no cut outside H's zone", () => {
   assert.equal(kingpinPlayer.balance, 1500, "no cut ever -- outside H's zone entirely");
 });
 
-test("active: Hostile Takeover seizes an owned tile and reverts to the original owner at round end", () => {
+test("active: Hostile Takeover seizes an owned tile and reverts to the original owner once H's own next turn comes around", () => {
   const room = makeRoom(["Kingpin", "Owner", "Third"]);
   after(() => cleanup(room));
   const kingpinPlayer = room.playerById("p0");
@@ -98,13 +98,33 @@ test("active: Hostile Takeover seizes an owned tile and reverts to the original 
   assert.ok(!owner.properties.includes(1));
 
   room.endTurn(); // p0 -> p1
+  assert.equal(room.ownership[1].ownerId, "p0", "still H's -- not p1's own turn yet");
   room.endTurn(); // p1 -> p2
-  room.endTurn(); // p2 -> p0 (wraps, round ends, takeover reverts)
+  assert.equal(room.ownership[1].ownerId, "p0", "still H's -- not p2's own turn yet either");
+  room.endTurn(); // p2 -> p0 (H's own turn again -- takeover reverts)
 
   assert.equal(room.ownership[1].ownerId, "p1", "reverted to the original owner");
   assert.equal(room.ownership[1].houses, 2);
   assert.ok(owner.properties.includes(1));
   assert.ok(!kingpinPlayer.properties.includes(1));
+});
+
+test("active: Hostile Takeover lasts a full lap even when cast by the LAST seat in turn order -- not just until the next global round boundary", () => {
+  // Regression: revert used to be gated on a global room.round counter, which
+  // made a last-seat caster's own takeover revert the instant THEIR turn
+  // ended (ending their turn is what wraps the seat pointer back to 0),
+  // robbing them of almost the entire round other players got. Revert is now
+  // caster-relative, so every caster gets the same full lap regardless of
+  // seat position.
+  const room = makeRoom(["First", "Second", "Kingpin"]);
+  after(() => cleanup(room));
+  const kingpinPlayer = room.playerById("p2"); // last seat
+  kingpinPlayer.character = "H";
+  room.turnIndex = 2; // it's H's turn
+  room.useAbility("p2", { tileId: 5 }); // unowned
+
+  room.endTurn(); // p2 -> p0 (wraps to seat 0 -- the OLD bug reverted it right here)
+  assert.equal(room.ownership[5].ownerId, "p2", "still H's -- caster-relative expiry, not a global round boundary");
 });
 
 test("active: Hostile Takeover on an unowned tile reverts to unowned again", () => {
@@ -116,9 +136,9 @@ test("active: Hostile Takeover on an unowned tile reverts to unowned again", () 
   room.useAbility("p0", { tileId: 5 }); // مدينة الكويت, unowned
   assert.equal(room.ownership[5].ownerId, "p0");
 
-  room.endTurn();
-  room.endTurn();
-  room.endTurn();
+  room.endTurn(); // p0 -> p1
+  room.endTurn(); // p1 -> p2
+  room.endTurn(); // p2 -> p0 (H's own turn again -- reverts)
 
   assert.equal(room.ownership[5], undefined, "back to unowned, not left assigned to H");
   assert.ok(!kingpinPlayer.properties.includes(5));

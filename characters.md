@@ -37,14 +37,17 @@ yet exposed over a socket event or given a lobby UI.
 **Active — Barricade, rechargeable, 10-turn cooldown.**
 
 - Places a wall on any one tile of his choice.
-- A one-shot trap, not a lasting wall for the round: the FIRST player whose
-  movement would otherwise carry them past that tile is stopped there
-  instead, and resolves that tile's normal action (rent, tax, card draw,
-  etc.) as if they'd landed on it exactly — even if their roll would have
-  taken them further. The wall then deactivates immediately, springing only
-  once per placement — everyone after that (including that same player
-  again, later the same round) passes through freely. If nobody crosses it,
-  it expires unused at the end of the round it was placed in.
+- A one-shot trap, not a lasting wall: the FIRST player whose movement would
+  otherwise carry them past that tile is stopped there instead, and resolves
+  that tile's normal action (rent, tax, card draw, etc.) as if they'd landed
+  on it exactly — even if their roll would have taken them further. The
+  wall then deactivates immediately, springing only once per placement —
+  everyone after that (including that same player again) passes through
+  freely. If nobody crosses it, it expires unused once D's own next turn
+  comes around (not a global round boundary — see "Round scoping" below).
+- The caster is immune to their own barricade — D's movement (or SE's, if
+  copied via Copy Cat) crosses it freely without springing or consuming it;
+  the trap stays armed for the next actual victim.
 - The barricade itself doesn't charge a toll; whatever the player owes is
   just whatever that tile would normally charge.
 
@@ -66,9 +69,10 @@ the table doesn't trade or get taxed.**
 
 **Active — Curse, rechargeable, 7-turn cooldown.**
 
-- Targets any player. For the remainder of that round, **100% of whatever
-  that player would earn** goes to Z instead — the cursed player gets nothing
-  at all from any source until the round ends.
+- Targets any player. Until Z's own next turn comes around (not a global
+  round boundary — see "Round scoping" below), **100% of whatever that
+  player would earn** goes to Z instead — the cursed player gets nothing at
+  all from any source for the duration.
 - The redirect is the last step in resolving any payout: compute the amount
   the cursed player would have received as usual (after any other
   modifier already in play — e.g. SE's bank-payout doubling if the cursed
@@ -92,8 +96,13 @@ the table doesn't trade or get taxed.**
 **Active — Detonate, rechargeable, cooldown scales with damage done.**
 
 - Destroys a building on a targeted property in a single action.
+- If the target already has nothing built on it, there's nothing to destroy
+  — Detonate **force-mortgages it instead**, for free (no payout to the
+  owner, unlike a voluntary mortgage — this is punitive). If it's already
+  mortgaged too, Detonate is rejected outright: there's truly nothing left
+  to do to that property.
 - Recharge formula, by what was destroyed:
-  - Empty lot (no levels removed): 4 turns
+  - Empty lot, force-mortgaged (no levels removed): 4 turns
   - One house level: 5 turns
   - Two house levels: 6 turns
   - Three house levels: 7 turns
@@ -116,8 +125,8 @@ the table doesn't trade or get taxed.**
 
 **Active — Hostile Takeover, rechargeable, 7-turn static cooldown.**
 
-- Takes control of any one tile for the duration of the current round only,
-  then it reverts.
+- Takes control of any one tile until H's own next turn comes around (not a
+  global round boundary — see "Round scoping" below), then it reverts.
 
 ~~Flank Seizure~~ — cut from the design. H now has a single active ability.
 
@@ -139,6 +148,9 @@ the table doesn't trade or get taxed.**
   demolishing **2 building levels** on every property tile it passes through
   (where applicable), continuing until it reaches tile 6 (the Coster
   Station).
+- Can't be activated while the caster is in the Holding Pen (no bus to send
+  out while jailed) — this also blocks SE from Copy Cat-ing Wrecking Tour
+  while SE himself is jailed, even if the real SD is free.
 
 ---
 
@@ -171,6 +183,16 @@ the table doesn't trade or get taxed.**
 - **Each ability is its own module**, iterable independently (numbers,
   cooldowns, and edge-case behavior can change without touching other
   abilities or the character roster).
+- **Every active ability is turn-gated** — usable only on the caster's own
+  turn, never off-turn.
+
+## Board-tile cooldown ease
+
+Landing on either **"عليكم الأمان"** (tiles 17, 46) or **"استراحة محارب"**
+(tile 24) eases the landing player's own active-ability cooldown by a random
+**1–4 turns** (clamped at 0), if they have a character with a cooldown
+currently ticking. A third REST-type tile (اجازة/Vacation) is unaffected —
+this is scoped by tile name, not by tile type.
 
 ## Bank-mediated cut pattern
 
@@ -193,6 +215,23 @@ one.
 Multiple cuts on the same event stack independently and don't interact —
 e.g. a tax payment with both D and Z active pays out 50% + 5% = 55% from
 the bank, on top of the taxpayer's unchanged tax bill.
+
+## Round scoping
+
+Barricade, Curse, and Hostile Takeover are all "for the round" effects, but
+"round" here means **until the casting player's own next turn comes
+around** — not a global table-wide round boundary. Each caster gets exactly
+one full lap of opportunity (or exposure) regardless of their seat position.
+
+Scoping it to a global round counter instead was tried first and found
+unfair: that counter increments whenever the turn pointer wraps back to seat
+0, which happens to be triggered by whichever player is LAST in turn order
+ending their own turn. That made the last-seated player's own Barricade/
+Curse/Hostile Takeover expire the instant their own turn ended — before
+anyone else even got a chance to be caught by it — while a first-seated
+caster effectively got an almost-full lap. Caster-relative scoping fixes
+this: every caster's effect lasts the same one full lap no matter when in
+turn order they cast it.
 
 ## Resolved
 

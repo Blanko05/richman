@@ -32,10 +32,11 @@ export const AUCTION_EXTEND_MS = 3 * 1000;
 export const MIN_TRADE_TIME_LIMIT_SEC = 10;
 export const MAX_TRADE_TIME_LIMIT_SEC = 10 * 60;
 export const WASTA_SUCCESS_RATE = 0.3;
-// Only the REST tiles literally named this ease ability cooldowns -- tile 24
-// ("استراحة محارب") is REST too but a deliberately distinct flavor, left with
-// just the existing vacation-pot payout (decisions.md).
-export const COOLDOWN_REST_TILE_NAME = "عليكم الأمان";
+// Both of these REST-type tiles ease the landing player's ability cooldown by
+// a random 1-4 turns (decisions.md) -- name-scoped rather than
+// TILE_TYPES.REST-scoped, since a third REST tile (اجازة/Vacation) exists too
+// and does NOT get this treatment, only the existing vacation-pot payout.
+export const COOLDOWN_REST_TILE_NAMES = new Set(["عليكم الأمان", "استراحة محارب"]);
 
 const PLAYER_COLORS = ["#e74c3c", "#3498db", "#2ecc71", "#f1c40f", "#9b59b6", "#1abc9c"];
 
@@ -54,9 +55,15 @@ const DEFAULT_RULES = {
 };
 
 export class Room {
-  constructor(code, hostId) {
+  constructor(code, hostId, mode = "normal") {
     this.code = code;
     this.hostId = hostId;
+    // "normal" (classic, no characters) or "characters" (real characters-mode
+    // game -- playerStartGame requires every active player to also have a
+    // character, not just an icon; see below). The dev sandbox also tags
+    // itself "characters" for state consistency, even though it bypasses this
+    // gate entirely via room.start() directly.
+    this.mode = mode;
     this.rules = { ...DEFAULT_RULES };
     this._board = BOARD;
     this._totalTiles = TOTAL_TILES;
@@ -109,30 +116,36 @@ export class Room {
     // can pop the wasta reveal exactly once per attempt.
     this.wastaSeq = 0;
     this.lastWastaAttempt = null;
-    // D's Barricade (see abilities/don.js) -- { tileId, roundPlaced } while a
+    // D's Barricade (see abilities/don.js) -- { tileId, casterId } while a
     // wall is up, null otherwise. A one-shot trap, not a lasting wall: it
     // clears itself (see applyBarricade) the instant it catches its first
-    // player, or at the end of the round if nobody ever crosses it.
-    // barricadeSeq/lastBarricadeStop follow the same "tell the client a
-    // special move just happened" role as jailSeq/jailFromTileId, since a
-    // barricaded move needs to animate stopping short of the roll's real
-    // distance instead of walking the full amount.
+    // (non-caster) player, or once the caster's own next turn comes around if
+    // nobody ever crosses it (see endTurn) -- caster-relative, not a global
+    // round boundary, so the duration is equally fair no matter the caster's
+    // seat position (decisions.md). barricadeSeq/lastBarricadeStop follow the
+    // same "tell the client a special move just happened" role as
+    // jailSeq/jailFromTileId, since a barricaded move needs to animate
+    // stopping short of the roll's real distance instead of walking the full
+    // amount.
     this.barricade = null;
     this.barricadeSeq = 0;
     this.lastBarricadeStop = null;
-    // Z's Curse (see abilities/enforcer.js) -- a list of { targetId, casterId,
-    // roundPlaced }, one per simultaneously active curse. A list, not a single
+    // Z's Curse (see abilities/enforcer.js) -- a list of { targetId,
+    // casterId }, one per simultaneously active curse. A list, not a single
     // slot, because Copy Cat can cast an independent second Curse (its own
     // caster/target/cooldown) while Z's real one is still active -- see
     // decisions.md. Each entry only ever redirects its own targetId's earnings
     // to its own casterId; a redirect is a terminal, direct transfer, never
     // itself re-checked against another curse, so even a mutual curse (A
-    // curses B, B curses A) can't ping-pong -- see settleEarning below.
+    // curses B, B curses A) can't ping-pong -- see settleEarning below. Expires
+    // once the casting player's own next turn comes around (endTurn), not a
+    // global round boundary -- decisions.md.
     this.activeCurses = [];
     // H's Hostile Takeover (see abilities/kingpin.js) -- { tileId,
-    // previousOwnership, roundPlaced } while active, null otherwise. Reverts to
-    // previousOwnership (or unowned, if it was previousOwnership === null) at
-    // the end of the round it was cast in -- see the revert call in endTurn.
+    // previousOwnership, casterId } while active, null otherwise. Reverts to
+    // previousOwnership (or unowned, if it was previousOwnership === null)
+    // once the caster's own next turn comes around -- see the revert call in
+    // endTurn. Caster-relative, not a global round boundary (decisions.md).
     this.hostileTakeover = null;
     // SD's Wrecking Tour (see abilities/conductor.js) -- bumped/set each use
     // so every client (not just the caster) can animate the bus travelling
@@ -257,6 +270,7 @@ export class Room {
     if (this.pendingAction?.playerId === playerId) this.pendingAction = null;
     this.clearTradesInvolving(playerId);
     this.clearAuctionBidsFrom(playerId);
+    this.clearAbilityEffectsFrom(playerId);
     this.pushLog(`${player.name} ${reasonLabel}.`);
     this.checkWinner();
     if (!this.winnerId && wasCurrent) {
@@ -344,14 +358,18 @@ export class Room {
   // there are enough players, and only once every active player has picked
   // an icon (previously unenforced -- the host could start before everyone
   // had one, leaving latecomers stuck with no token image and, since icons
-  // also assign the player's color, no distinct board color either).
+  // also assign the player's color, no distinct board color either). The
+  // character requirement only applies in "characters" mode -- normal games
+  // never touch characters at all.
   playerStartGame(playerId) {
     if (this.hostId !== playerId) return { error: "Only the host can start the game" };
     if (this.started) return { error: "Game already started" };
     const active = this.players.filter((p) => !p.left);
     if (active.length < 2) return { error: "Need at least 2 players to start" };
     if (active.some((p) => !p.icon)) return { error: "Every player must choose an icon before starting" };
-    if (active.some((p) => !p.character)) return { error: "Every player must choose a character before starting" };
+    if (this.mode === "characters" && active.some((p) => !p.character)) {
+      return { error: "Every player must choose a character before starting" };
+    }
     this.start();
     return { ok: true };
   }
@@ -492,14 +510,16 @@ export class Room {
   // move; unchanged for backward movement or when no barricade is active.
   // It's a one-shot trap, not a wall that lasts the whole round: the FIRST
   // player it catches springs it, clearing this.barricade immediately so
-  // nobody else (including that same player again) is stopped by it later
-  // in the same round.
-  applyBarricade(prev, steps) {
+  // nobody else (including that same player again) is stopped by it later.
+  // The caster (D himself, or SE Copy-Catting Barricade) is immune and passes
+  // through freely without springing or consuming it -- the trap stays armed
+  // for the next actual victim. No separate staleness check is needed here:
+  // endTurn already clears an unsprung barricade the instant the caster's own
+  // next turn comes around, so a non-null this.barricade at this point is
+  // always still genuinely active.
+  applyBarricade(prev, steps, playerId) {
     if (!this.barricade || steps <= 0) return steps;
-    if (this.barricade.roundPlaced !== this.round) {
-      this.barricade = null;
-      return steps;
-    }
+    if (this.barricade.casterId === playerId) return steps;
     let distance = this.barricade.tileId - prev;
     if (distance <= 0) distance += this._totalTiles;
     if (distance < steps) {
@@ -511,7 +531,7 @@ export class Room {
 
   movePlayer(player, steps) {
     const prev = player.position;
-    const effectiveSteps = this.applyBarricade(prev, steps);
+    const effectiveSteps = this.applyBarricade(prev, steps, player.id);
     let next = (prev + effectiveSteps) % this._totalTiles;
     if (next < 0) next += this._totalTiles;
     if (effectiveSteps > 0 && next < prev) {
@@ -595,8 +615,8 @@ export class Room {
           this.pushLog(`${player.name} landed on Vacation and collected the pot of ${pot} coins!`);
           this.vacationPot = 0;
         }
-        if (tile.name === COOLDOWN_REST_TILE_NAME && player.character && player.abilityCooldown > 0) {
-          const reduction = Math.min(player.abilityCooldown, 1 + Math.floor(Math.random() * 2));
+        if (COOLDOWN_REST_TILE_NAMES.has(tile.name) && player.character && player.abilityCooldown > 0) {
+          const reduction = Math.min(player.abilityCooldown, 1 + Math.floor(Math.random() * 4));
           player.abilityCooldown -= reduction;
           this.pushLog(`${player.name}'s ability cooldown eased by ${reduction} turn(s) at ${tile.name}.`);
         }
@@ -792,7 +812,9 @@ export class Room {
     this.pendingAction = null;
     if (effect.type === "advanceTo") {
       player.position = effect.tile;
-      if (effect.collectStart) player.balance += 200;
+      if (effect.collectStart) {
+        this.settleEarning(player.id, () => { player.balance += 200; }, { isBankPayout: true });
+      }
       this.resolveTile(player);
     } else {
       this.movePlayer(player, effect.steps);
@@ -1171,12 +1193,25 @@ export class Room {
     // At most one active curse can ever target a given recipient -- Curse's
     // own active() (abilities/enforcer.js) rejects cursing someone already
     // cursed by a different caster, so this find() never has more than one
-    // match to choose between.
-    const curse = this.activeCurses.find((c) => c.targetId === recipientId && c.roundPlaced === this.round);
+    // match to choose between. No staleness check needed: endTurn already
+    // prunes an entry the instant its own caster's next turn comes around, so
+    // anything still in activeCurses here is genuinely still active.
+    const curse = this.activeCurses.find((c) => c.targetId === recipientId);
     if (netGain > 0 && curse) {
       recipient.balance -= netGain;
       this.playerById(curse.casterId).balance += netGain;
     }
+  }
+
+  // Barricade/Curse/Hostile Takeover now expire "until the caster's own next
+  // turn" (endTurn) rather than a global round boundary -- but a bankrupt or
+  // departed player's seat is skipped forever after, so turnIndex can never
+  // land back on them to trigger that normal expiry. Called from
+  // checkBankruptcy/kickPlayer as a safety net so these don't linger forever.
+  clearAbilityEffectsFrom(playerId) {
+    if (this.barricade?.casterId === playerId) this.barricade = null;
+    this.activeCurses = this.activeCurses.filter((c) => c.casterId !== playerId);
+    if (this.hostileTakeover?.casterId === playerId) this.revertHostileTakeover();
   }
 
   // A third ability-hook kind (alongside triggerPassive and applyRentModifiers):
@@ -1188,9 +1223,11 @@ export class Room {
     return modify ? modify(this, { holder: recipient, amount }) : amount;
   }
 
-  // Reverts H's Hostile Takeover (abilities/kingpin.js) at the end of the round
-  // it was cast in -- restores whatever ownership record the tile had before
-  // (or unowned, if it had none), including each side's properties list.
+  // Reverts H's Hostile Takeover (abilities/kingpin.js) once the caster's own
+  // next turn comes around (or immediately, if the caster goes bankrupt/leaves
+  // first -- see clearAbilityEffectsFrom) -- restores whatever ownership
+  // record the tile had before (or unowned, if it had none), including each
+  // side's properties list.
   revertHostileTakeover() {
     const { tileId, previousOwnership } = this.hostileTakeover;
     const current = this.ownership[tileId];
@@ -1228,10 +1265,16 @@ export class Room {
   // validation and returns { error } to reject, or { ok: true, ...extra } on
   // success -- `extra` is passed to a variable activeCooldown function so e.g.
   // Detonate/Copy Cat's cooldown can depend on what the active actually did.
+  // Turn-gated: only usable on the caster's own turn (user's call, reversing
+  // the earlier "abilities aren't turn-gated" decision -- decisions.md).
+  // Conductor.js's own pendingAction guard for Wrecking Tour stays regardless
+  // -- even on your own turn, an unresolved decision from earlier this same
+  // turn (e.g. your own still-open buy prompt) shouldn't be clobbered.
   useAbility(playerId, params) {
     const player = this.playerById(playerId);
     if (!player || player.bankrupt || player.left) return { error: "You can't use an ability right now" };
     if (!this.started) return { error: "Game hasn't started" };
+    if (this.currentPlayer()?.id !== playerId) return { error: "Not your turn" };
     if (!player.character) return { error: "No character selected" };
     const ability = abilityFor(player.character);
     if (!ability) return { error: "Unknown character" };
@@ -1509,6 +1552,7 @@ export class Room {
       player.properties = [];
       this.clearTradesInvolving(player.id);
       this.clearAuctionBidsFrom(player.id);
+      this.clearAbilityEffectsFrom(player.id);
       this.pushLog(`${player.name} went bankrupt!`);
       this.checkWinner();
     }
@@ -1552,12 +1596,19 @@ export class Room {
       // marks a new one, even mid-loop while skipping bankrupt/left seats.
       if (this.turnIndex === 0) this.round += 1;
     } while (this.players[this.turnIndex].bankrupt || this.players[this.turnIndex].left);
-    // Proactively drop an expired barricade/curse so exposed state (toState,
-    // for the client's wall/curse indicators) doesn't lag stale until the next
-    // move/payout happens to trip their own lazy round checks.
-    if (this.barricade && this.barricade.roundPlaced !== this.round) this.barricade = null;
-    this.activeCurses = this.activeCurses.filter((c) => c.roundPlaced === this.round);
-    if (this.hostileTakeover && this.hostileTakeover.roundPlaced !== this.round) this.revertHostileTakeover();
+    // Barricade/Curse/Hostile Takeover all last "until the caster's own next
+    // turn comes around" rather than until the next global round boundary --
+    // decisions.md. A global-round boundary made these effects unfairly short
+    // for whoever cast them from the last seat in turn order (their own turn
+    // ending is what crosses back to seat 0, expiring the effect before anyone
+    // else even got a chance to be affected by it) while giving an almost-full
+    // lap to an early-seat caster. Checking against the player whose turn is
+    // starting now gives every caster the same fair duration regardless of
+    // seat position: one full lap, no matter when in the cycle they cast it.
+    const newCurrentId = this.players[this.turnIndex].id;
+    if (this.barricade && this.barricade.casterId === newCurrentId) this.barricade = null;
+    this.activeCurses = this.activeCurses.filter((c) => c.casterId !== newCurrentId);
+    if (this.hostileTakeover && this.hostileTakeover.casterId === newCurrentId) this.revertHostileTakeover();
     this.lastRoll = null;
     this.lastCard = null;
     this.canRollAgain = true;
@@ -1586,6 +1637,7 @@ export class Room {
     return {
       code: this.code,
       hostId: this.hostId,
+      mode: this.mode,
       started: this.started,
       turnIndex: this.turnIndex,
       round: this.round,
@@ -1632,6 +1684,7 @@ export class Room {
     return {
       code: this.code,
       hostId: this.hostId,
+      mode: this.mode,
       started: this.started,
       turnIndex: this.turnIndex,
       round: this.round,
@@ -1679,7 +1732,7 @@ export class Room {
   //  - The current player's turn timer is re-armed for a fresh full duration
   //    rather than trying to preserve exactly how much time was left.
   static fromSnapshot(snapshot) {
-    const room = new Room(snapshot.code, snapshot.hostId);
+    const room = new Room(snapshot.code, snapshot.hostId, snapshot.mode || "normal");
     if (snapshot.rules) room.rules = { ...DEFAULT_RULES, ...snapshot.rules };
     if (snapshot.vacationPot !== undefined) room.vacationPot = snapshot.vacationPot;
     room.started = snapshot.started;

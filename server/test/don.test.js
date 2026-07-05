@@ -4,8 +4,8 @@ import { makeRoom, cleanup } from "./helpers.js";
 
 // D -- The Don. Passive: 30% bank-mediated cut of rent in his turf zone
 // (tiles 13/14/16), 50% bank-mediated cut of any tax payment. Active:
-// Barricade -- a tile-wide wall for the rest of the round, forward-movement
-// interception only (decisions.md).
+// Barricade -- a one-shot wall lasting until D's own next turn comes around,
+// forward-movement interception only (decisions.md).
 
 function ownTile(room, playerId, tileId, houses = 0) {
   room.ownership[tileId] = { ownerId: playerId, houses };
@@ -142,17 +142,25 @@ test("active: Barricade lets movement through untouched when the roll doesn't re
   assert.equal(mover.position, 5);
 });
 
-test("active: Barricade also stops D's own movement -- no exemption for the caster", () => {
+test("active: the caster is immune to their own Barricade -- passes through freely without springing it", () => {
   const room = makeRoom(["Don", "Other"]);
   after(() => cleanup(room));
   const donPlayer = room.playerById("p0");
+  const other = room.playerById("p1");
   donPlayer.character = "D";
   room.useAbility("p0", { tileId: 4 });
 
   donPlayer.position = 0;
-  room.movePlayer(donPlayer, 10);
+  room.movePlayer(donPlayer, 10); // would normally land on tile 10 -- caster ignores the barricade entirely
 
-  assert.equal(donPlayer.position, 4);
+  assert.equal(donPlayer.position, 10, "caster passes straight through, unaffected");
+  assert.ok(room.barricade, "still armed -- the caster's crossing doesn't spring or consume it");
+
+  other.position = 0;
+  room.movePlayer(other, 10); // now a real victim crosses it
+
+  assert.equal(other.position, 4, "the next actual player is still stopped short");
+  assert.equal(room.barricade, null, "now sprung and cleared");
 });
 
 test("active: Barricade is scoped to forward movement only -- a backward card move ignores it", () => {
@@ -192,7 +200,7 @@ test("active: a barricade wraps past Start correctly and still pays the pass-Sta
   assert.equal(mover.balance, before + 200, "still collects the pass-Start bonus for wrapping through it");
 });
 
-test("active: Barricade expires at the end of the round it was placed in", () => {
+test("active: Barricade expires once D's own next turn comes around", () => {
   const room = makeRoom(["Don", "Mover", "Third"]);
   after(() => cleanup(room));
   room.playerById("p0").character = "D";
@@ -201,11 +209,36 @@ test("active: Barricade expires at the end of the round it was placed in", () =>
 
   room.endTurn(); // p0 -> p1
   room.endTurn(); // p1 -> p2
-  room.endTurn(); // p2 -> p0 (wraps, round increments, barricade should expire)
+  room.endTurn(); // p2 -> p0 (D's own turn again -- barricade should expire)
   assert.equal(room.barricade, null);
 
   const mover = room.playerById("p1");
   mover.position = 0;
   room.movePlayer(mover, 10);
   assert.equal(mover.position, 10, "no longer intercepted -- barricade already expired");
+});
+
+test("active: Barricade lasts a full lap even when cast by the LAST seat in turn order -- not just until the next global round boundary", () => {
+  // Regression: expiry used to be gated on a global room.round counter that
+  // increments whenever turnIndex wraps back to seat 0. That made a
+  // last-seat caster's own barricade expire the instant THEIR turn ended
+  // (since ending their turn is what wraps the seat pointer), before anyone
+  // else ever got a chance to be caught by it -- unfair vs. a seat-0 caster,
+  // who effectively got an almost-full lap. Expiry is now caster-relative
+  // (endTurn), so a last-seat caster gets the same full lap as anyone else.
+  const room = makeRoom(["First", "Second", "Don"]);
+  after(() => cleanup(room));
+  const donPlayer = room.playerById("p2"); // last seat
+  donPlayer.character = "D";
+  room.turnIndex = 2; // it's D's turn
+  room.useAbility("p2", { tileId: 4 });
+  assert.ok(room.barricade);
+
+  room.endTurn(); // p2 -> p0 (wraps to seat 0 -- the OLD bug expired it right here)
+  assert.ok(room.barricade, "still armed -- caster-relative expiry, not a global round boundary");
+
+  const first = room.playerById("p0");
+  first.position = 0;
+  room.movePlayer(first, 10); // would normally land on 10
+  assert.equal(first.position, 4, "still catches the first real victim after a full lap");
 });

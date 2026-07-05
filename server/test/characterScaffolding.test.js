@@ -6,8 +6,11 @@ import { ABILITIES } from "../src/game/abilities/index.js";
 
 // A pre-start room -- makeRoom() from helpers.js always calls room.start(),
 // which is too late to exercise selectCharacter's pre-start-only rules.
-function makeLobbyRoom(names = ["Alice", "Bob"]) {
-  const room = new Room("TEST", "p0");
+// Defaults to "characters" mode since this whole file is about character-
+// selection scaffolding, which only matters (i.e. only gates playerStartGame)
+// in that mode -- see Room.js's playerStartGame.
+function makeLobbyRoom(names = ["Alice", "Bob"], mode = "characters") {
+  const room = new Room("TEST", "p0", mode);
   names.forEach((name, i) => room.addPlayer(`p${i}`, name, `t${i}`));
   return room;
 }
@@ -44,6 +47,15 @@ test("playerStartGame requires every active player to have picked a character, s
   room.selectCharacter("p0", "D");
   room.selectCharacter("p1", "Z");
   assert.deepEqual(room.playerStartGame("p0"), { ok: true });
+  assert.equal(room.started, true);
+});
+
+test("playerStartGame does NOT require a character in normal mode -- only characters mode gates on it", () => {
+  const room = makeLobbyRoom(["Alice", "Bob"], "normal");
+  after(() => cleanup(room));
+  room.setPlayerIcon("p0", "italian");
+  room.setPlayerIcon("p1", "american");
+  assert.deepEqual(room.playerStartGame("p0"), { ok: true }, "no character ever selected, starts fine in normal mode");
   assert.equal(room.started, true);
 });
 
@@ -120,14 +132,19 @@ test("triggerPassive calls only active, characterized players' matching hook", (
   const calls = [];
   // Temporarily register fake abilities directly in the real registry so this
   // exercises the actual dispatch path (Room.triggerPassive -> abilityFor),
-  // not a reimplementation of it.
+  // not a reimplementation of it. Restores the REAL D/Z entries afterward
+  // (not just `delete`s the fakes) -- node:test runs every test in a file in
+  // one process, so leaving the registry's real D/Z permanently missing would
+  // silently break any later test in this file that uses those characters.
+  const realD = ABILITIES.D;
+  const realZ = ABILITIES.Z;
   ABILITIES.D = { passives: { onTestHook: (r, payload) => calls.push(payload.holder.id) } };
   ABILITIES.Z = { passives: {} }; // no handler for this hook -- must be skipped silently, not throw
   try {
     room.triggerPassive("onTestHook", {});
   } finally {
-    delete ABILITIES.D;
-    delete ABILITIES.Z;
+    ABILITIES.D = realD;
+    ABILITIES.Z = realZ;
   }
   assert.deepEqual(calls, ["p0"]); // only p0 (active, D, has the hook) -- not p1 (no handler) or p2 (bankrupt)
 });
@@ -139,10 +156,21 @@ test("useAbility rejects a player with no character selected", () => {
   assert.equal(result.error, "No character selected");
 });
 
-test("useAbility rejects a character with no ability registered yet (pre-implementation scaffolding state)", () => {
+test("useAbility rejects a character code with no ability registered (defensive -- all 6 real characters are registered today)", () => {
   const room = makeRoom();
   after(() => cleanup(room));
-  room.playerById("p0").character = "D";
+  room.playerById("p0").character = "NOT_A_REAL_CHARACTER";
   const result = room.useAbility("p0", {});
   assert.equal(result.error, "Unknown character");
+});
+
+test("useAbility is turn-gated -- only usable on the caster's own turn", () => {
+  const room = makeRoom(["Alice", "Bob"]);
+  after(() => cleanup(room));
+  room.playerById("p1").character = "D";
+  const result = room.useAbility("p1", { tileId: 4 }); // it's p0's turn, not p1's
+  assert.equal(result.error, "Not your turn");
+
+  room.endTurn(); // now it's p1's turn
+  assert.deepEqual(room.useAbility("p1", { tileId: 4 }), { ok: true, tileId: 4 });
 });

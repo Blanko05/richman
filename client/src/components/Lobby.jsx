@@ -34,10 +34,14 @@ export default function Lobby({ onJoined, onSandboxJoined, theme, onToggleTheme 
   // Shared identity
   const [name,  setName]  = useState("");
 
-  // Game mode (create flow only) -- "characters" skips the normal per-player
-  // lobby entirely and jumps straight into a 6-seat testing sandbox (see
-  // createSandboxRoom, decisions.md).
-  const [mode, setMode] = useState("normal"); // 'normal'|'characters'
+  // Game mode (create flow only). "characters" is a REAL room (its own
+  // waitroom -- App.jsx's CharactersWaitroom -- where players pick an icon
+  // AND a character before starting). "sandbox" is the dev-only testing
+  // harness (createSandboxRoom, decisions.md) that skips the lobby entirely
+  // and jumps straight into an already-started 6-seat game, one per
+  // character -- kept in the codebase for development, not shown outside dev
+  // builds (see the sandbox button below, gated on import.meta.env.DEV).
+  const [mode, setMode] = useState("normal"); // 'normal'|'characters'|'sandbox'
 
   // Join-specific
   const [code, setCode] = useState("");
@@ -60,7 +64,7 @@ export default function Lobby({ onJoined, onSandboxJoined, theme, onToggleTheme 
   function createRoom() {
     if (!name.trim()) return setError("Enter your name first");
     setBusy(true);
-    if (mode === "characters") {
+    if (mode === "sandbox") {
       socket.emit("createSandboxRoom", {}, (res) => {
         setBusy(false);
         if (res?.error) return setError(res.error);
@@ -68,7 +72,7 @@ export default function Lobby({ onJoined, onSandboxJoined, theme, onToggleTheme 
       });
       return;
     }
-    socket.emit("createRoom", { name: name.trim() }, (res) => {
+    socket.emit("createRoom", { name: name.trim(), mode }, (res) => {
       setBusy(false);
       if (res?.error) return setError(res.error);
       onJoined(res);
@@ -217,11 +221,23 @@ export default function Lobby({ onJoined, onSandboxJoined, theme, onToggleTheme 
               >
                 ★ Characters
               </button>
+              {/* Dev-only: the old instant-6-seat testing harness, kept for
+                  development but never shown in a production build. */}
+              {import.meta.env.DEV && (
+                <button
+                  className={`mode-btn${mode === "sandbox" ? " active" : ""}`}
+                  onClick={() => setMode("sandbox")}
+                >
+                  🧪 Sandbox
+                </button>
+              )}
             </div>
 
             <p className="lobby-mode-desc">
               {mode === "characters"
-                ? "Testing sandbox: jumps straight into a 6-seat game, one per character, so you can switch between them and try abilities."
+                ? "Pick a token and a character, then use your ability once the game starts."
+                : mode === "sandbox"
+                ? "Dev testing sandbox: jumps straight into a 6-seat game, one per character, so you can switch between them and try abilities."
                 : "Classic property trading — pick your color and rules once you're in the room."}
             </p>
 

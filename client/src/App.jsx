@@ -15,6 +15,7 @@ import DevTools from "./components/DevTools";
 import ConfirmDialog from "./components/ConfirmDialog";
 import RulesPanel from "./components/RulesPanel";
 import IconPicker from "./components/IconPicker";
+import CharactersWaitroom from "./components/CharactersWaitroom";
 import ThemeToggle from "./components/ThemeToggle";
 import { IconCopy, IconCheck } from "./components/icons";
 import { ICONS } from "./data/icons";
@@ -393,6 +394,21 @@ function App() {
 
   if (!joined || !state) {
     return <Lobby onJoined={handleJoined} onSandboxJoined={handleSandboxJoined} theme={theme} onToggleTheme={toggleTheme} />;
+  }
+
+  // Characters mode gets its own waitroom, entirely separate from Normal
+  // mode's inline one right below -- Normal mode's flow/UI must never be
+  // touched for this feature.
+  if (!state.started && state.mode === "characters") {
+    return (
+      <CharactersWaitroom
+        state={state}
+        myId={myId}
+        theme={theme}
+        onToggleTheme={toggleTheme}
+        onLeave={handleLeave}
+      />
+    );
   }
 
   if (!state.started) {

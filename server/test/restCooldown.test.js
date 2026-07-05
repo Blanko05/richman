@@ -2,10 +2,11 @@ import { test, after } from "node:test";
 import assert from "node:assert/strict";
 import { makeRoom, cleanup } from "./helpers.js";
 
-// "عليكم الأمان" tiles (17, 46) ease the landing player's ability cooldown by
-// a random 1-2 turns, clamped at 0. Tile 24 ("استراحة محارب") is REST too but
-// a deliberately distinct flavor -- it keeps only the existing vacation-pot
-// payout, unaffected by this mechanic (decisions.md).
+// Both "عليكم الأمان" tiles (17, 46) AND "استراحة محارب" (tile 24) ease the
+// landing player's ability cooldown by a random 1-4 turns, clamped at 0
+// (decisions.md). A third REST-type tile (اجازة/Vacation) is NOT included --
+// name-scoped, not TILE_TYPES.REST-scoped -- it keeps only the existing
+// vacation-pot payout.
 
 function withFixedRandom(value, fn) {
   const orig = Math.random;
@@ -17,7 +18,7 @@ function withFixedRandom(value, fn) {
   }
 }
 
-test("landing on 'عليكم الأمان' eases the cooldown by 1 when the random roll is low", () => {
+test("landing on 'عليكم الأمان' eases the cooldown by 1 when the random roll is at the bottom of the range", () => {
   const room = makeRoom(["Wrecker", "Other"]);
   after(() => cleanup(room));
   const wreckerPlayer = room.playerById("p0");
@@ -30,7 +31,7 @@ test("landing on 'عليكم الأمان' eases the cooldown by 1 when the rand
   assert.equal(wreckerPlayer.abilityCooldown, 4);
 });
 
-test("landing on 'عليكم الأمان' eases the cooldown by 2 when the random roll is high", () => {
+test("landing on 'عليكم الأمان' eases the cooldown by 4 when the random roll is at the top of the range", () => {
   const room = makeRoom(["Wrecker", "Other"]);
   after(() => cleanup(room));
   const wreckerPlayer = room.playerById("p0");
@@ -40,7 +41,24 @@ test("landing on 'عليكم الأمان' eases the cooldown by 2 when the rand
   wreckerPlayer.position = 45;
   withFixedRandom(0.99, () => room.movePlayer(wreckerPlayer, 1)); // -> tile 46
 
+  assert.equal(wreckerPlayer.abilityCooldown, 1);
+});
+
+test("landing on 'عليكم الأمان' can also ease the cooldown by the two middle values (2 and 3)", () => {
+  const room = makeRoom(["Wrecker", "Other"]);
+  after(() => cleanup(room));
+  const wreckerPlayer = room.playerById("p0");
+  wreckerPlayer.character = "Y";
+
+  wreckerPlayer.abilityCooldown = 5;
+  wreckerPlayer.position = 16;
+  withFixedRandom(0.25, () => room.movePlayer(wreckerPlayer, 1)); // -> tile 17, reduction 2
   assert.equal(wreckerPlayer.abilityCooldown, 3);
+
+  wreckerPlayer.abilityCooldown = 5;
+  wreckerPlayer.position = 16;
+  withFixedRandom(0.5, () => room.movePlayer(wreckerPlayer, 1)); // -> tile 17, reduction 3
+  assert.equal(wreckerPlayer.abilityCooldown, 2);
 });
 
 test("the ease clamps at 0 -- never goes negative", () => {
@@ -51,7 +69,7 @@ test("the ease clamps at 0 -- never goes negative", () => {
   wreckerPlayer.abilityCooldown = 1;
 
   wreckerPlayer.position = 16;
-  withFixedRandom(0.99, () => room.movePlayer(wreckerPlayer, 1)); // would-be reduction of 2, only 1 to give
+  withFixedRandom(0.99, () => room.movePlayer(wreckerPlayer, 1)); // would-be reduction of 4, only 1 to give
 
   assert.equal(wreckerPlayer.abilityCooldown, 0);
 });
@@ -77,7 +95,7 @@ test("no effect when the cooldown is already 0", () => {
   assert.equal(wreckerPlayer.abilityCooldown, 0);
 });
 
-test("tile 24 ('استراحة محارب') is REST too but does NOT ease cooldowns -- name-scoped, not type-scoped", () => {
+test("tile 24 ('استراحة محارب') also eases cooldowns, same as 'عليكم الأمان' -- both names are scoped in", () => {
   const room = makeRoom(["Wrecker", "Other"]);
   after(() => cleanup(room));
   const wreckerPlayer = room.playerById("p0");
@@ -87,7 +105,7 @@ test("tile 24 ('استراحة محارب') is REST too but does NOT ease cooldo
 
   withFixedRandom(0.99, () => room.movePlayer(wreckerPlayer, 1)); // -> tile 24
 
-  assert.equal(wreckerPlayer.abilityCooldown, 5, "unaffected -- only the two 'عليكم الأمان'-named tiles ease cooldowns");
+  assert.equal(wreckerPlayer.abilityCooldown, 1, "eased by 4, same range and mechanic as 'عليكم الأمان'");
 });
 
 test("the vacation-pot payout still applies on 'عليكم الأمان' tiles alongside the cooldown ease", () => {

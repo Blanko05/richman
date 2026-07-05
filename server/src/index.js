@@ -90,11 +90,11 @@ function bindSocket(socket, roomCode, playerId) {
 }
 
 io.on("connection", (socket) => {
-  socket.on("createRoom", ({ name, color, rules } = {}, cb) => {
+  socket.on("createRoom", ({ name, color, rules, mode } = {}, cb) => {
     const playerId = nanoid();
     const token = nanoid();
     const code = generateRoomCode();
-    const room = new Room(code, playerId);
+    const room = new Room(code, playerId, mode === "characters" ? "characters" : "normal");
     room.notify = () => broadcastState(code);
     room.addPlayer(playerId, token, name, color);
     if (rules) room.updateSettings(playerId, { rules });
@@ -140,7 +140,7 @@ io.on("connection", (socket) => {
   socket.on("createSandboxRoom", (_payload, cb) => {
     const code = generateRoomCode();
     const hostId = nanoid();
-    const room = new Room(code, hostId);
+    const room = new Room(code, hostId, "characters");
     room.notify = () => broadcastState(code);
     const identities = SANDBOX_ROSTER.map(({ characterId, label }, i) => {
       const playerId = i === 0 ? hostId : nanoid();

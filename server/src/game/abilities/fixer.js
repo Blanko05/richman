@@ -26,7 +26,7 @@ import { ABILITIES } from "./index.js";
 export const fixer = {
   id: "SE",
   activeName: "Copy Cat",
-  description: "Copies another player's active ability and uses an independent instance of it immediately, as if SE owned it. First pick who to copy, then that ability's own target (if it needs one).",
+  description: "Copies another player's active ability and uses an independent instance of it immediately, as if he owned it. First pick who to copy, then that ability's own target (if it needs one).",
   passiveDescription: "Doubles every bank payout (Start bonus, card draws, refunds, other characters' ability cuts).",
   cooldownLabel: "5 + half the copied ability's cooldown, rounded down",
   // Distinct from plain "player" (Curse) -- tells the client this is a

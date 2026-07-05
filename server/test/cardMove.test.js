@@ -80,6 +80,33 @@ test("confirmCardMove also handles the advanceTo effect (collecting Start Plaza'
   assert.equal(room.pendingAction, null, "Start Plaza has no further effect, nothing left pending");
 });
 
+test("regression: a cursed player's advanceTo-Start card bonus is redirected to Z, not kept", () => {
+  // Bug: confirmCardMove's collectStart branch used to do `player.balance += 200`
+  // directly instead of going through settleEarning, so it bypassed Curse's
+  // redirect entirely (and SE's bank-payout doubling) -- a cursed player who
+  // drew this card kept the 200 anyway, while the normal pass/land-on-Start
+  // bonus from rolling dice correctly went through settleEarning already.
+  const room = makeRoom(["Cursed", "Enforcer"]);
+  after(() => cleanup(room));
+  const alice = room.players[0];
+  const enforcerPlayer = room.players[1];
+  enforcerPlayer.character = "Z";
+  room.turnIndex = 1; // abilities are turn-gated -- cast on Z's own turn
+  room.useAbility("p1", { targetId: "p0" }); // curse Alice
+  room.turnIndex = 0; // back to Alice's turn to roll
+  forceTopCard(room, "surpriseDeck", "s4"); // advance to Start Plaza, collect 200
+  alice.position = 12; // tile 15 is Surprise, 3 tiles away
+  const aliceBefore = alice.balance;
+  const enforcerBefore = enforcerPlayer.balance;
+
+  withDice([[2, 1]], () => room.rollDice("p0")); // lands on tile 15, draws s4
+  room.confirmCardMove("p0");
+
+  assert.equal(alice.position, 0);
+  assert.equal(alice.balance, aliceBefore, "cursed -- keeps none of the card's bonus");
+  assert.equal(enforcerPlayer.balance, enforcerBefore + 200, "the redirected 200 goes to Z instead");
+});
+
 test("a goToHolding card effect is NOT deferred -- it resolves immediately, not via confirmCardMove", () => {
   const room = makeRoom();
   after(() => cleanup(room));

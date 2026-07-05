@@ -88,7 +88,9 @@ test("passive + active ordering: SE's doubling applies BEFORE Curse's redirect, 
   const enforcerPlayer = room.playerById("p1");
   fixerPlayer.character = "SE";
   enforcerPlayer.character = "Z";
+  room.turnIndex = 1; // abilities are turn-gated -- cast on Z's own turn
   room.useAbility("p1", { targetId: "p0" }); // curse SE
+  room.turnIndex = 0;
 
   const fixerBefore = fixerPlayer.balance;
   const enforcerBefore = enforcerPlayer.balance;
@@ -116,6 +118,24 @@ test("active: Copy Cat copies Y's Detonate, using SE's own targeting, and doesn'
   assert.equal(fixerPlayer.abilityCooldown, 5 + Math.floor(9 / 2), "SE's own cooldown: 5 + half of Detonate's 9-turn cooldown, rounded down");
 });
 
+test("active: Copy Cat copying Detonate onto an empty lot force-mortgages it too, no payout, same as a real Detonate", () => {
+  const room = makeRoom(["Fixer", "Wrecker", "Victim"]);
+  after(() => cleanup(room));
+  const fixerPlayer = room.playerById("p0");
+  fixerPlayer.character = "SE";
+  room.playerById("p1").character = "Y";
+  room.debugGrantGroup("p2", "pink"); // undeveloped
+  const victim = room.playerById("p2");
+  const victimBefore = victim.balance;
+
+  const result = room.useAbility("p0", { copyFromId: "p1", params: { tileId: 1 } });
+  assert.equal(result.ok, true);
+  assert.equal(result.forcedMortgage, true);
+  assert.equal(room.ownership[1].mortgaged, true);
+  assert.equal(victim.balance, victimBefore, "no payout, even copied");
+  assert.equal(fixerPlayer.abilityCooldown, 5 + Math.floor(4 / 2), "5 + half of Detonate's shortest 4-turn tier");
+});
+
 test("active: Copy Cat copies Z's Curse, casting it as SE rather than the original Z", () => {
   const room = makeRoom(["Fixer", "Enforcer", "Victim"]);
   after(() => cleanup(room));
@@ -125,7 +145,7 @@ test("active: Copy Cat copies Z's Curse, casting it as SE rather than the origin
 
   const result = room.useAbility("p0", { copyFromId: "p1", params: { targetId: "p2" } });
   assert.equal(result.ok, true);
-  assert.deepEqual(room.activeCurses, [{ targetId: "p2", casterId: "p0", roundPlaced: 0 }]);
+  assert.deepEqual(room.activeCurses, [{ targetId: "p2", casterId: "p0" }]);
   assert.equal(fixerPlayer.abilityCooldown, 5 + Math.floor(7 / 2)); // Curse's static 7-turn cooldown
 });
 
@@ -143,6 +163,41 @@ test("active: Copy Cat copies SD's Wrecking Tour using SE's own position, not th
   assert.equal(result.ok, true);
   assert.equal(result.tilesPassed, 2, "path computed from SE's position (4), not SD's (40)");
   assert.equal(room.ownership[5].houses, 0);
+});
+
+test("active: Copy Cat copying Wrecking Tour is rejected if SE (the actual caster) is in the Holding Pen, even though SD himself is free", () => {
+  const room = makeRoom(["Fixer", "Conductor"]);
+  after(() => cleanup(room));
+  const fixerPlayer = room.playerById("p0");
+  fixerPlayer.character = "SE";
+  fixerPlayer.inHolding = true;
+  room.playerById("p1").character = "SD";
+
+  const result = room.useAbility("p0", { copyFromId: "p1", params: {} });
+  assert.equal(result.error, "Can't send out Wrecking Tour from the Holding Pen");
+  assert.equal(fixerPlayer.abilityCooldown, 0, "a rejected copy arms no cooldown");
+});
+
+test("active: Copy Cat copying Barricade makes SE (the caster), not just D, immune to it", () => {
+  const room = makeRoom(["Fixer", "Don", "Other"]);
+  after(() => cleanup(room));
+  const fixerPlayer = room.playerById("p0");
+  fixerPlayer.character = "SE";
+  room.playerById("p1").character = "D";
+
+  const result = room.useAbility("p0", { copyFromId: "p1", params: { tileId: 4 } });
+  assert.equal(result.ok, true);
+  assert.equal(room.barricade.casterId, "p0", "the barricade is attributed to SE, who cast the copy, not D");
+
+  fixerPlayer.position = 0;
+  room.movePlayer(fixerPlayer, 10); // would normally land on tile 10
+  assert.equal(fixerPlayer.position, 10, "SE, as the actual caster, passes through freely");
+  assert.ok(room.barricade, "untouched -- SE's own crossing doesn't spring it");
+
+  const other = room.playerById("p2");
+  other.position = 0;
+  room.movePlayer(other, 10);
+  assert.equal(other.position, 4, "a real victim still gets stopped");
 });
 
 test("active: Copy Cat rejects self-targeting", () => {

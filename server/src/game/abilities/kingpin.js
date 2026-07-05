@@ -9,9 +9,11 @@
 // only fires when rent is owed); a 3rd landing on an unowned/mortgaged/
 // self-owned tile still consumes the count, it just has nothing to cut.
 //
-// Active: Hostile Takeover seizes any one ownable tile (not already his) for
-// the rest of the round -- see Room.revertHostileTakeover for the actual
-// revert-at-round-end mechanics.
+// Active: Hostile Takeover seizes any one ownable tile (not already his)
+// until H's own next turn comes around (not a global round boundary --
+// decisions.md; keeps the duration equally fair regardless of caster seat
+// position) -- see Room.revertHostileTakeover for the actual revert
+// mechanics.
 import { TILE_TYPES } from "../board.js";
 
 const TURF_TILES = new Set([37, 38, 39, 41, 44, 45, 47]); // salmonLeft + tealLeft -- characters.md
@@ -20,8 +22,8 @@ const OWNABLE_TYPES = new Set([TILE_TYPES.PROPERTY, TILE_TYPES.TRANSIT, TILE_TYP
 export const kingpin = {
   id: "H",
   activeName: "Hostile Takeover",
-  description: "Seizes control of any tile (owned or unowned, not already his) for the rest of the round, then it reverts.",
-  passiveDescription: "Every 3rd landing on his turf (tiles 37/38/39/41/44/45/47) triggers a 90% cut of that landing's rent.",
+  description: "Seizes control of any tile (owned or unowned, not already his) until his next turn, then it reverts.",
+  passiveDescription: "Every 3rd landing on his turf (بابل, اربيل, كربلاء, بغداد, الطفيلة, السلط, اربد) triggers a 90% cut of that landing's rent.",
   cooldownLabel: "7 turns",
   targetType: "tile",
   activeCooldown: 7,
@@ -48,11 +50,11 @@ export const kingpin = {
     room.hostileTakeover = {
       tileId,
       previousOwnership: current ? { ...current } : null,
-      roundPlaced: room.round,
+      casterId: caster.id,
     };
     room.ownership[tileId] = current ? { ...current, ownerId: caster.id } : { ownerId: caster.id, houses: 0 };
     if (!caster.properties.includes(tileId)) caster.properties.push(tileId);
-    room.pushLog(`${caster.name} seized control of ${tile.name} for the rest of the round.`);
+    room.pushLog(`${caster.name} seized control of ${tile.name} until their own next turn.`);
     return { ok: true, tileId };
   },
 };

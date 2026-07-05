@@ -185,22 +185,37 @@ test("active: Wrecking Tour triggers a normal buy prompt if the destination stat
   assert.deepEqual(room.pendingAction, { type: "awaitBuy", tileId: 6, playerId: "p0" });
 });
 
-test("active: Wrecking Tour refuses to run while any pendingAction is already open, so it can't clobber someone else's", () => {
-  const room = makeRoom(["Other", "Conductor"]);
+test("active: Wrecking Tour refuses to run while any pendingAction is already open, even one of your own from earlier this turn", () => {
+  const room = makeRoom(["Conductor", "Other"]);
   after(() => cleanup(room));
-  const conductorPlayer = room.playerById("p1");
+  const conductorPlayer = room.playerById("p0");
   conductorPlayer.character = "SD";
-  // p0's own turn lands them on an unowned tile, opening a real awaitBuy that
-  // belongs to a DIFFERENT player than the one about to try Wrecking Tour.
-  room.playerById("p0").position = 0;
-  room.movePlayer(room.playerById("p0"), 1);
+  // SD's own turn lands him on an unowned tile, opening a real awaitBuy that's
+  // still unresolved when he then tries Wrecking Tour -- abilities are
+  // turn-gated now (only usable on your own turn), so the only way to exercise
+  // this guard is with a still-open decision from earlier your own turn, not
+  // someone else's.
+  conductorPlayer.position = 0;
+  room.movePlayer(conductorPlayer, 1);
   assert.equal(room.pendingAction.type, "awaitBuy");
   const pendingBefore = { ...room.pendingAction };
 
-  const result = room.useAbility("p1", {});
+  const result = room.useAbility("p0", {});
 
   assert.equal(result.error, "Resolve the current action first");
-  assert.deepEqual(room.pendingAction, pendingBefore, "the other player's pending buy prompt is untouched");
+  assert.deepEqual(room.pendingAction, pendingBefore, "the still-open buy prompt is untouched");
+  assert.equal(conductorPlayer.abilityCooldown, 0, "a rejected attempt arms no cooldown");
+});
+
+test("active: Wrecking Tour rejects a caster in the Holding Pen", () => {
+  const room = makeRoom(["Conductor", "Other"]);
+  after(() => cleanup(room));
+  const conductorPlayer = room.playerById("p0");
+  conductorPlayer.character = "SD";
+  conductorPlayer.inHolding = true;
+
+  const result = room.useAbility("p0", {});
+  assert.equal(result.error, "Can't send out Wrecking Tour from the Holding Pen");
   assert.equal(conductorPlayer.abilityCooldown, 0, "a rejected attempt arms no cooldown");
 });
 

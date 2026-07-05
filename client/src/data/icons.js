@@ -9,4 +9,7 @@ export const ICONS = [
   { id: "russian", name: "Russian", img: "/icons/russian.png", color: "#3498db", scale: 1.15 },
   { id: "arab", name: "Arab", img: "/icons/arab.png", color: "#2ecc71", scale: 1 },
   { id: "japanese", name: "Japanese", img: "/icons/japanese.png", color: "#f1c40f", scale: 1 },
+  // 6th icon -- needed so all 6 seats in a characters-mode game can have a
+  // distinct token.
+  { id: "orangelad", name: "Orangelad", img: "/icons/orangelad.png", color: "#e67e22", scale: 1 },
 ];

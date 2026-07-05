@@ -5,17 +5,19 @@
 // of every tax payment. Both are bank-absorbed, same reasoning as D's tax cut
 // -- a tax/trade event has no single player "earner" to deduct from.
 //
-// Active: Curse redirects everything the target nets this round to Z --
-// implemented via Room.activeCurses (a list, not a single slot -- Copy Cat
-// can cast an independent second Curse of its own) + Room.settleEarning,
-// which wraps every earning-producing call site in Room.js so the redirect
-// always applies to the fully-computed final amount (decisions.md). Z also
-// carries a permanent drawback, unconditional and unrelated to Curse itself:
-// see Room.payToLeaveHolding.
+// Active: Curse redirects everything the target nets to Z, until Z's own
+// next turn comes around (not a global round boundary -- decisions.md; this
+// keeps the effect's duration equally fair regardless of the caster's seat
+// position) -- implemented via Room.activeCurses (a list, not a single slot
+// -- Copy Cat can cast an independent second Curse of its own) +
+// Room.settleEarning, which wraps every earning-producing call site in
+// Room.js so the redirect always applies to the fully-computed final amount
+// (decisions.md). Z also carries a permanent drawback, unconditional and
+// unrelated to Curse itself: see Room.payToLeaveHolding.
 export const enforcer = {
   id: "Z",
   activeName: "Curse",
-  description: "Targets a player -- for the rest of the round, everything they'd earn goes to Z instead. Z can never pay to leave the Holding Pen early.",
+  description: "Targets a player -- until his own next turn, everything they'd earn goes to him instead. He can never pay to leave the Holding Pen early.",
   passiveDescription: "Takes a 5% cut of every completed trade's total value and 5% of every tax payment.",
   cooldownLabel: "7 turns",
   targetType: "player",
@@ -43,8 +45,8 @@ export const enforcer = {
     // caster from having two of their own curses active at once, but drop any
     // stale entry from this caster first rather than assume it can't happen.
     room.activeCurses = room.activeCurses.filter((c) => c.casterId !== caster.id);
-    room.activeCurses.push({ targetId, casterId: caster.id, roundPlaced: room.round });
-    room.pushLog(`${caster.name} cursed ${target.name} for the rest of the round.`);
+    room.activeCurses.push({ targetId, casterId: caster.id });
+    room.pushLog(`${caster.name} cursed ${target.name} until their own next turn.`);
     return { ok: true, targetId };
   },
 };
