@@ -1,12 +1,17 @@
 import { ICONS } from "../data/icons";
 
-export default function PlayerToken({ player, stackIndex, stackTotal, leftPct, topPct, glideMs, glideEase, isMoving, isLanding, justBought, isActiveTurn }) {
+export default function PlayerToken({ player, stackIndex, stackTotal, leftPct, topPct, glideMs, glideEase, isMoving, isLanding, justBought, isActiveTurn, isBusRiding }) {
   const wrapStyle = {
     "--c": player.color,
     "--i": stackIndex,
     "--n": stackTotal,
     "--glide-ms": `${glideMs || 220}ms`,
     "--glide-ease": glideEase || "ease",
+    // Grows the whole token (not just the icon inside it) while riding the
+    // bus -- reads as a bigger visual event than swapping the face alone,
+    // and scaling the outer .cv2-token wrapper (rather than the inner face)
+    // means the bus glyph inside grows proportionally with it for free.
+    "--bus-scale": isBusRiding ? 1.4 : 1,
     left: `${leftPct}%`,
     top: `${topPct}%`,
   };
@@ -24,7 +29,16 @@ export default function PlayerToken({ player, stackIndex, stackTotal, leftPct, t
   return (
     <span className="cv2-token" style={wrapStyle} title={player.name}>
       <span className={innerCls} style={innerStyle}>
-        {icon ? (
+        {isBusRiding ? (
+          // Wrecking Tour: swap out whatever the rider's own icon/face is
+          // for the same bus glyph the station tiles use, for the duration
+          // of the glide -- reverts on its own once the ride ends (see
+          // BoardClassic's busRidingId).
+          <span
+            className="cv2-token-face cv2-token-face--icon cv2-token-face--bus"
+            style={{ backgroundImage: "url(/bus.svg)" }}
+          />
+        ) : icon ? (
           <span
             className="cv2-token-face cv2-token-face--icon"
             style={{ backgroundImage: `url(${icon.img})` }}

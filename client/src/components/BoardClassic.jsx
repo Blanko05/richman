@@ -326,7 +326,7 @@ function ClassicTile({ tile, owned, players, sideLen, onSelect, isSelected, targ
 // player always has exactly one current tile, in flight or not, so
 // stacking (stackIndex/stackTotal) works the same way whether a token is
 // sitting still or mid-glide through the tile it's passing.
-function TokenLayer({ players, sideLen, trackCenters, cellPct, holdingTileId, currentPlayerId, visualPositions, floatingIds, landingIds, celebratingIds }) {
+function TokenLayer({ players, sideLen, trackCenters, cellPct, holdingTileId, currentPlayerId, visualPositions, floatingIds, landingIds, celebratingIds, busRidingId }) {
   // The Holding tile splits into two sub-zones -- everywhere else, all
   // occupants of a tile still share one shared "main" stack exactly as
   // before.
@@ -372,6 +372,7 @@ function TokenLayer({ players, sideLen, trackCenters, cellPct, holdingTileId, cu
             isLanding={landingIds.has(p.id)}
             justBought={celebratingIds.has(p.id)}
             isActiveTurn={p.id === currentPlayerId}
+            isBusRiding={busRidingId === p.id}
           />
         ));
       })}
@@ -579,6 +580,16 @@ export default function BoardClassic({ state, myId, tokenMoving, onTokenMovingCh
   // early Buy/Decline or End Turn) would fire mid-glide.
   const [movingIds, setMovingIds] = useState(() => new Set());
   const [celebratingIds, setCelebratingIds] = useState(() => new Set());
+  // SD's (or a Copy-Catting SE's) token during a Wrecking Tour glide --
+  // swapped out for a bus in place of the rider's own icon while it plays.
+  // Set explicitly wherever a tour-caused glide is kicked off (both the
+  // generic move effect and the full-lap edge case further down), then
+  // clears itself the moment that rider actually stops moving, rather than
+  // needing a completion callback threaded through stepTokenAlongLegs.
+  const [busRidingId, setBusRidingId] = useState(null);
+  useEffect(() => {
+    if (busRidingId && !movingIds.has(busRidingId)) setBusRidingId(null);
+  }, [movingIds, busRidingId]);
   const prevPositionsRef = useRef(new Map(players.map((p) => [p.id, p.position])));
   const prevRollSeqRef = useRef(rollSeq);
   const prevJailSeqRef = useRef(jailSeq);
@@ -720,6 +731,11 @@ export default function BoardClassic({ state, myId, tokenMoving, onTokenMovingCh
   // pendingAction from before that card existed, so it doesn't mistake the
   // dice-roll's own move for the (still-pending) card's.
   const prevPendingActionRef = useRef(state.pendingAction);
+  // Independent from the Wrecking Tour effect's own prevWreckingTourSeqRef
+  // (further down) -- both effects react to the same wreckingTourSeq bump in
+  // the same commit, so sharing one ref would let whichever effect runs
+  // first silently consume the change before the other ever sees it.
+  const prevTourSeqForBusRef = useRef(wreckingTourSeq);
 
   useEffect(() => {
     const prevPositions = prevPositionsRef.current;
@@ -727,6 +743,8 @@ export default function BoardClassic({ state, myId, tokenMoving, onTokenMovingCh
     prevRollSeqRef.current = rollSeq;
     const jailJustHappened = jailSeq !== prevJailSeqRef.current;
     prevJailSeqRef.current = jailSeq;
+    const tourJustHappened = wreckingTourSeq !== prevTourSeqForBusRef.current;
+    prevTourSeqForBusRef.current = wreckingTourSeq;
     const prevPendingAction = prevPendingActionRef.current;
     prevPendingActionRef.current = state.pendingAction;
     const backwardMoverId =
@@ -766,6 +784,7 @@ export default function BoardClassic({ state, myId, tokenMoving, onTokenMovingCh
         const legs = buildResolvedLegs({
           from, to, isJailTeleport, jailFromDestination: jailFromTileId, backward: isBackwardCardMove,
         });
+        if (tourJustHappened && lastWreckingTour?.casterId === id) setBusRidingId(id);
         stepTokenAlongLegs(id, legs, startDelay);
       });
     }
@@ -777,7 +796,7 @@ export default function BoardClassic({ state, myId, tokenMoving, onTokenMovingCh
       }), 700));
     }
     return () => timers.forEach(clearTimeout);
-  }, [players, rollSeq, jailSeq, jailedPlayerId, jailFromTileId, state.pendingAction, board.length, sideLen, trackCenters]);
+  }, [players, rollSeq, jailSeq, jailedPlayerId, jailFromTileId, state.pendingAction, board.length, sideLen, trackCenters, wreckingTourSeq, lastWreckingTour]);
 
   // SD's Wrecking Tour (decisions.md): player.position now genuinely changes
   // to the tour's destination (see conductor.js), so the generic move-
@@ -807,6 +826,7 @@ export default function BoardClassic({ state, myId, tokenMoving, onTokenMovingCh
 
     if (startTileId === destinationTileId) {
       setMovingIds((s) => new Set(s).add(casterId));
+      setBusRidingId(casterId);
       stepTokenAlongLegs(casterId, legs);
     }
 
@@ -919,6 +939,7 @@ export default function BoardClassic({ state, myId, tokenMoving, onTokenMovingCh
           floatingIds={floatingIds}
           landingIds={landingIds}
           celebratingIds={celebratingIds}
+          busRidingId={busRidingId}
         />
 
         {selectedTile && (

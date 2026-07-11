@@ -58,10 +58,10 @@ yet exposed over a socket event or given a lobby UI.
 **Passive, always on, no cost or limit. Purely reactive — earns nothing if
 the table doesn't trade or get taxed.**
 
-- Takes **5% of the total value of every completed trade** — cash on both
+- Takes **30% of the total value of every completed trade** — cash on both
   sides plus the listed board `price` of any properties changing hands, not
   just the coins involved.
-- Takes **5% of every tax payment** any player makes.
+- Takes **30% of every tax payment** any player makes.
 - Both percentages are bank-mediated, same as D's tax cut — never an extra
   charge on the player actually paying. (A trade or a tax payment has no
   single "earner" to deduct from, so unlike D's/H's turf cuts, the bank
@@ -212,14 +212,14 @@ one.
 
 - **D's turf rent cut (30%)** and **H's turf landing cut (90%)** — deducted
   from the property owner's earnings. Payer pays the same rent as always.
-- **D's tax cut (50%)** and **Z's tax cut (5%)** — a tax payment has no
+- **D's tax cut (50%)** and **Z's tax cut (30%)** — a tax payment has no
   player recipient (it goes to the bank), so nothing is deducted from any
   player; the bank simply absorbs the cut.
-- **Z's trade cut (5%)** — same reasoning as tax: no single player "earns"
+- **Z's trade cut (30%)** — same reasoning as tax: no single player "earns"
   a trade, so the bank absorbs it.
 
 Multiple cuts on the same event stack independently and don't interact —
-e.g. a tax payment with both D and Z active pays out 50% + 5% = 55% from
+e.g. a tax payment with both D and Z active pays out 50% + 30% = 80% from
 the bank, on top of the taxpayer's unchanged tax bill.
 
 ## Round scoping
@@ -241,7 +241,7 @@ turn order they cast it.
 
 ## Resolved
 
-- **Tax stacking**: D's 50% and Z's 5% both apply to the same tax payment
+- **Tax stacking**: D's 50% and Z's 30% both apply to the same tax payment
   when both are in play, each independently bank-mediated. The taxed player
   pays the normal tax amount, unaffected either way.
 - **Bank-mediated cut pattern** established as the standard mechanism for

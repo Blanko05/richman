@@ -2,7 +2,7 @@ import { test, after } from "node:test";
 import assert from "node:assert/strict";
 import { makeRoom, cleanup } from "./helpers.js";
 
-// Z -- The Enforcer. Passive: 5% bank-mediated cut of tax and trade value.
+// Z -- The Enforcer. Passive: 30% bank-mediated cut of tax and trade value.
 // Active: Curse redirects the target's net earnings to Z for the rest of the
 // round, as the LAST step after any other modifier (e.g. a turf cut) has
 // already applied. Z also can never pay to leave the Holding Pen (permanent
@@ -13,7 +13,7 @@ function ownTile(room, playerId, tileId, houses = 0) {
   room.playerById(playerId).properties.push(tileId);
 }
 
-test("passive: 5% tax cut is bank-mediated, taxed player pays the normal amount unaffected", () => {
+test("passive: 30% tax cut is bank-mediated, taxed player pays the normal amount unaffected", () => {
   const room = makeRoom(["Taxed", "Enforcer"]);
   after(() => cleanup(room));
   const taxed = room.playerById("p0");
@@ -26,10 +26,10 @@ test("passive: 5% tax cut is bank-mediated, taxed player pays the normal amount 
   room.movePlayer(taxed, 1); // tile 4, tax tile, amount 100
 
   assert.equal(taxed.balance, taxedBefore - 100);
-  assert.equal(enforcerPlayer.balance, enforcerBefore + 5);
+  assert.equal(enforcerPlayer.balance, enforcerBefore + 30);
 });
 
-test("passive: 5% trade cut counts cash both ways plus the listed price of every property changing hands", () => {
+test("passive: 30% trade cut counts cash both ways plus the listed price of every property changing hands", () => {
   const room = makeRoom(["Alice", "Bob", "Enforcer"]);
   after(() => cleanup(room));
   const alice = room.playerById("p0");
@@ -46,7 +46,7 @@ test("passive: 5% trade cut counts cash both ways plus the listed price of every
   room.respondTrade("p1", proposeResult.tradeId, true);
 
   const expectedTotal = 100 + 40 + 60 + 60; // both money legs + both listed prices
-  assert.equal(enforcerPlayer.balance, enforcerBefore + Math.floor(expectedTotal * 0.05));
+  assert.equal(enforcerPlayer.balance, enforcerBefore + Math.floor(expectedTotal * 0.3));
 });
 
 test("active: Curse redirects a cursed owner's rent to Z, unaffected by any other modifier here", () => {
@@ -293,5 +293,5 @@ test("stacking: D's tax cut and Z's tax cut both independently apply to the same
 
   assert.equal(taxed.balance, taxedBefore - 100, "taxed player's bill is unaffected by either cut stacking");
   assert.equal(donPlayer.balance, 1500 + 50);
-  assert.equal(enforcerPlayer.balance, 1500 + 5);
+  assert.equal(enforcerPlayer.balance, 1500 + 30);
 });

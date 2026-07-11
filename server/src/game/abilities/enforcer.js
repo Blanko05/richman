@@ -1,7 +1,7 @@
 // Z -- The Enforcer (characters.md).
 //
-// Passive: 5% bank-mediated cut of every completed trade's total value (cash
-// both sides + listed board price of any properties changing hands) and 5%
+// Passive: 30% bank-mediated cut of every completed trade's total value (cash
+// both sides + listed board price of any properties changing hands) and 30%
 // of every tax payment. Both are bank-absorbed, same reasoning as D's tax cut
 // -- a tax/trade event has no single player "earner" to deduct from.
 //
@@ -18,16 +18,16 @@ export const enforcer = {
   id: "Z",
   activeName: "Curse",
   description: "Targets a player and redirects everything they earn to him, until his own next turn.",
-  passiveDescription: "Takes 5% of every trade's value and 5% of every tax payment. Can never pay to leave the Holding Pen early.",
+  passiveDescription: "Takes 30% of every trade's value and 30% of every tax payment. Can never pay to leave the Holding Pen early.",
   cooldownLabel: "7 turns",
   targetType: "player",
   activeCooldown: 7,
   passives: {
     onTaxPaid(room, { holder, amount }) {
-      room.bankMediatedCut(holder.id, Math.floor(amount * 0.05));
+      room.bankMediatedCut(holder.id, Math.floor(amount * 0.3));
     },
     onTradeCompleted(room, { holder, totalTradeValue }) {
-      room.bankMediatedCut(holder.id, Math.floor(totalTradeValue * 0.05));
+      room.bankMediatedCut(holder.id, Math.floor(totalTradeValue * 0.3));
     },
   },
   active(room, caster, { targetId } = {}) {

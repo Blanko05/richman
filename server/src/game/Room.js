@@ -64,6 +64,12 @@ export class Room {
     // itself "characters" for state consistency, even though it bypasses this
     // gate entirely via room.start() directly.
     this.mode = mode;
+    // Set directly by index.js's createSandboxRoom, never via this
+    // constructor's own args -- `mode` alone can't distinguish a sandbox
+    // room from a real characters-mode one (both are "characters", see
+    // above), but useAbility needs to know: sandbox rooms never arm ability
+    // cooldowns, so every character's active is spammable for testing.
+    this.isSandbox = false;
     this.rules = { ...DEFAULT_RULES };
     this._board = BOARD;
     this._totalTiles = TOTAL_TILES;
@@ -1286,9 +1292,13 @@ export class Room {
     }
     const result = ability.active(this, player, params);
     if (result?.error) return result;
-    player.abilityCooldown = typeof ability.activeCooldown === "function"
-      ? ability.activeCooldown(result)
-      : ability.activeCooldown;
+    // Sandbox rooms never arm a cooldown -- every active stays spammable so
+    // a single tester can try it repeatedly without waiting real turns out.
+    if (!this.isSandbox) {
+      player.abilityCooldown = typeof ability.activeCooldown === "function"
+        ? ability.activeCooldown(result)
+        : ability.activeCooldown;
+    }
     return { ok: true, ...result };
   }
 
@@ -1688,6 +1698,7 @@ export class Room {
       code: this.code,
       hostId: this.hostId,
       mode: this.mode,
+      isSandbox: this.isSandbox,
       started: this.started,
       turnIndex: this.turnIndex,
       round: this.round,
@@ -1736,6 +1747,7 @@ export class Room {
   //    rather than trying to preserve exactly how much time was left.
   static fromSnapshot(snapshot) {
     const room = new Room(snapshot.code, snapshot.hostId, snapshot.mode || "normal");
+    room.isSandbox = snapshot.isSandbox || false;
     if (snapshot.rules) room.rules = { ...DEFAULT_RULES, ...snapshot.rules };
     if (snapshot.vacationPot !== undefined) room.vacationPot = snapshot.vacationPot;
     room.started = snapshot.started;

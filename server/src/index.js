@@ -141,6 +141,7 @@ io.on("connection", (socket) => {
     const code = generateRoomCode();
     const hostId = nanoid();
     const room = new Room(code, hostId, "characters");
+    room.isSandbox = true;
     room.notify = () => broadcastState(code);
     const identities = SANDBOX_ROSTER.map(({ characterId, label }, i) => {
       const playerId = i === 0 ? hostId : nanoid();
