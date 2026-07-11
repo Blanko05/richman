@@ -9,9 +9,10 @@
 // Room.js already uses for house-sale refunds/mortgage values.
 //
 // Active: Barricade places a wall that's a one-shot trap, not a lasting wall
-// -- it catches only the FIRST player whose forward movement crosses it (the
-// caster is immune, see Room.applyBarricade), then deactivates immediately,
-// or expires unused once D's own next turn comes around (decisions.md's
+// -- it catches only the FIRST player whose forward movement crosses it, D
+// himself included (no caster immunity, see Room.applyBarricade), then
+// deactivates immediately, or expires unused once D's own next turn comes
+// around (decisions.md's
 // "Round scoping" -- caster-relative, not a global round boundary). See
 // Room.applyBarricade for the actual movement-interception math (forward
 // movement only; decisions.md).
@@ -20,8 +21,8 @@ const TURF_TILES = new Set([13, 14, 16]); // salmonRight -- characters.md
 export const don = {
   id: "D",
   activeName: "Barricade",
-  description: "Places a wall on a chosen tile -- traps the first player whose forward movement carries them past it, stopping them there instead, then deactivates.",
-  passiveDescription: "Takes a 30% cut of rent collected on his turf (اغوار الشمال, نهر الميراندا, اغوار الجنوب) and 50% of every tax payment anywhere on the board.",
+  description: "Places a wall on a tile that traps the first player who crosses it. Disappears when triggered, or by your next turn if it isn't.",
+  passiveDescription: "Takes a 30% cut of rent on his turf and 50% of every tax payment, board-wide.",
   cooldownLabel: "10 turns",
   targetType: "tile",
   activeCooldown: 10,

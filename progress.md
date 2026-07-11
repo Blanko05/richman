@@ -9,6 +9,166 @@ in the same pass.
 
 ---
 
+## Pass 47 — 2026-07-11 — Character ability bug fixes, a stuck-turn race condition, and cooldown/behavior tuning
+
+**Goal:** four reported ability bugs, one intermittent "End Turn button never
+appears" report from real play, and three explicit balance/behavior tweaks.
+
+**What was done (bug fixes):**
+- `abilities/conductor.js` (Wrecking Tour): now skips any property the
+  caster himself owns while demolishing along the path — it used to tear
+  down SD's own buildings too, on the theory (now overridden, user's call)
+  that a non-targeted sweep wasn't covered by the "no self-targeting" rule.
+- `abilities/fixer.js` (Copy Cat): no longer rejects copying a bankrupt or
+  left player's character. Copy Cat only ever *reads* which ability a
+  target picked — it never acts on them — so there was no reason to
+  exclude eliminated players; the old check just meant clicking their
+  (still-rendered, still-clickable) row in the Players panel silently
+  failed with "Invalid target."
+- `Room.js` (`buyHouse`/`sellHouse`/`mortgageProperty`/`unmortgageProperty`):
+  all four now reject any tile currently under a Hostile Takeover. H's
+  seizure was only ever meant to be rent-collection control, not full
+  ownership rights — without this guard, the Kingpin could build/sell/
+  mortgage a seized tile, and since `revertHostileTakeover` restores a
+  pre-seizure snapshot on expiry, any of those changes would've silently
+  vanished (or handed the original owner an unexpected mortgage state) the
+  moment it reverted.
+- `client/components/BoardClassic.jsx` (Wrecking Tour animation): when SD
+  starts the tour already sitting on tile 6, the trip is a near-full lap
+  back to the same tile (decisions.md's documented edge case), so
+  `player.position` ends up unchanged and the generic move-detection effect
+  — which only glides a token when its position actually differs between
+  broadcasts — never picks it up. Extracted `groupPathIntoLegs` /
+  `stepTokenAlongLegs` so this case can be driven manually using the
+  server's own path. Also fixed a latent bug in the same code: the
+  demolish-sound timing used to be derived from a fresh from/to walk that
+  silently degenerates to zero legs whenever from === to — same root cause,
+  same fix (reuse the real path instead of recomputing it).
+
+**What was done (the stuck "Moving…"/no End Turn button race condition):**
+- Root cause, found by inspection (not directly reproduced — the report
+  says "every once in a while," consistent with a timing-dependent race):
+  a move's glide+landing animation is a chain of `setTimeout`s that can run
+  1-3+ seconds. Every one of them lived in one array, wiped and rebuilt by
+  the move-detection `useEffect`'s cleanup on every re-run — and that effect
+  re-runs on **every** broadcast to the room, not just ones involving the
+  moving player (another player buying a house, a reconnect, anything). An
+  unrelated broadcast landing mid-glide cancelled the in-flight chain,
+  including the timer that would've eventually cleared that player out of
+  `movingIds`. Since `prevPositionsRef` was already updated to the final
+  position at the *start* of the run that began the glide, no later run
+  ever saw a "move" for that player again to restart it — they stayed
+  orphaned in `movingIds` (blocking their own End Turn button, and
+  everyone else's "Waiting for X…" status) until a refresh reset the
+  component's state from scratch.
+- Fix: `BoardClassic.jsx`'s `stepTokenAlongLegs` now tracks each player's
+  timer chain independently in a ref (`glideTimersRef`, keyed by player id)
+  that survives across effect re-runs, instead of one shared per-run array.
+  An unrelated broadcast no longer touches another player's in-flight
+  animation; only a genuine new move for that *same* player cancels and
+  restarts their own chain. Added a real unmount cleanup for the ref too.
+
+**What was done (design tuning, all user's call):**
+- `Room.js`'s `applyBarricade`: reversed an earlier fix (decisions.md) that
+  had made the caster immune to their own Barricade. The caster can now
+  spring and get trapped by his own wall, same as anyone else.
+- `abilities/wrecker.js`: Detonate's hotel-tier cooldown raised from 9 to
+  10 turns (`DETONATE_COOLDOWN_BY_LEVELS`).
+- `abilities/kingpin.js`: Hostile Takeover's cooldown lowered from 7 to 6
+  turns.
+- Investigated and confirmed as **not a bug, left as-is**: Wrecking Tour
+  completely ignores barricades. It computes its own path and jumps
+  straight to tile 6 via a direct `caster.position` assignment rather than
+  moving tile-by-tile through `Room.movePlayer` (the only place
+  `applyBarricade` is ever called), so a barricade anywhere on the route
+  neither stops the bus nor gets sprung/consumed by it.
+- `characters.md` and ability-file doc comments updated to match all of the
+  above (Barricade immunity, Detonate's hotel cooldown, Hostile Takeover's
+  cooldown, Wrecking Tour skipping the caster's own tiles and ignoring
+  barricades).
+
+**Why these calls:** all four bug fixes were user-reported from actual
+play, not speculative. The Hostile Takeover ownership-rights lockdown in
+particular closes a second, related latent bug beyond what was reported
+(the silent-revert-corruption case above) — worth calling out since it
+wasn't itself in the bug report.
+
+**State at end of pass:** server `npm test` 162/162 (5 new: 1 fixer, 3
+kingpin, 1 conductor — the bankrupt/left, ownership-rights, and
+skip-own-property fixes). Client `vite build` clean throughout. The
+stuck-turn race condition fix has no server test surface (client-only) and
+per [[feedback-verification-approach]] was not reproduced live by the
+assistant — worth a multi-player playtest to confirm, since it was
+timing-dependent to begin with.
+
+---
+
+## Pass 46 — 2026-07-11 — Characters-mode UI/UX pass: dev port fix, ability copy tightening, character-select redesign, in-game roster modal, cooldown badge polish
+
+**Goal:** open-ended UI/UX pass on Characters mode, started from "Create
+Room does nothing" and expanding into copy clarity, layout, and in-game
+reference tooling as issues surfaced.
+
+**What was done:**
+- `.claude/launch.json`: the server's declared dev port (3001) didn't match
+  the port documented everywhere else in the repo (README, systemDesign.md,
+  `client/src/socket.js`'s dev-mode fallback) — 4000. That mismatch was the
+  actual root cause of "Create Room does nothing": the client's socket was
+  connecting to 4000, but nothing was listening there. Fixed to 4000.
+- All six `server/abilities/*.js` files: tightened every passive/active
+  description for clarity, specifically around ability *duration* and
+  *cooldown* (the two things a player actually needs to know at a glance).
+  Also fixed two copy bugs found in the process, both content errors, not
+  just wording: Enforcer's Curse blurb had a drawback line ("can never pay
+  to leave the Holding Pen early") that actually belongs to his permanent
+  passive, not Curse itself — moved it. Wrecker's Detonate blurb claimed it
+  could target "yours or another player's" property, but the code
+  explicitly rejects self-targeting — fixed to say "another player's."
+- `CharacterPicker.jsx` / `App.css`: the character-select screen was
+  functionally unusable — a global `button { text-transform: uppercase }`
+  rule was cascading into every card's body text (turning multi-sentence
+  ability descriptions into a wall of tiny all-caps text), and the picker
+  was squeezed into the same fixed-400px card as the rest of the lobby
+  form. Restructured into readable name/passive/active-tag rows (uppercase
+  now scoped to the character name only) in a single-column list.
+- `CharactersWaitroom.jsx` / `App.css`: split the waitroom into two columns
+  — room code/players/icon/rules/actions on the left (unchanged, just
+  narrower), character picker on the right with the width it actually
+  needs, matching the left column's height and scrolling independently
+  (new `.characters-waitroom-*` classes; the pre-existing Normal-mode
+  waitroom in `App.jsx` is untouched, confirmed separate).
+- `CharactersWaitroom.jsx`: removed the "No icon yet"/"No character yet"
+  red error labels next to each player's name in the pre-game player list
+  (redundant with the picker's own "Please select a..." prompts below).
+- New `CharacterRosterModal.jsx` + a `panel-roster-btn` "🃏 Characters"
+  button in `PlayersPanel.jsx` (Characters-mode games only): an in-game,
+  read-only overlay listing every active player with their character's
+  full ability card, reusing the same tightened copy/card markup as the
+  pre-game picker. Cards in the same grid row are stretched to equal height
+  (`align-items` default/stretch + `flex: 1` down the chain) instead of
+  trailing off at each card's own natural height.
+- `CharacterPanel.jsx` (in-game own-ability panel) / `App.css`: removed the
+  redundant static "Cooldown: X turns" line (duplicated the header badge
+  whenever the ability was ready-and-unused) and turned the header badge
+  into a color-coded pill — solid green "✓ Ready" vs. a neutral "⏳ N turns
+  left" — instead of plain text.
+
+**Why these calls:** the port fix and the uppercase-cascade bug were both
+root-caused by inspection before any UI change was attempted, per
+[[feedback-verification-approach]]-style rigor — neither was a guess.
+Everything else was iterated live with the user screenshot-by-screenshot
+(copy wording, layout, then targeted polish requests), not a single
+unreviewed pass.
+
+**State at end of pass:** `vite build` clean after every change in this
+pass; server `npm test` 157/157 (unaffected — no server logic changed
+until the following pass). Not visually verified by the assistant via the
+preview tools per explicit user instruction ("don't use the preview tools
+from now on") — the user checked each change live against their own
+already-running dev server instead.
+
+---
+
 ## Pass 45 — 2026-07-04 — Restart no longer instant-kicks a mid-grace player
 
 **Goal:** follow-up to the connection-logic fixes earlier in this

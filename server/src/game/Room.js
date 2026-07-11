@@ -510,16 +510,15 @@ export class Room {
   // move; unchanged for backward movement or when no barricade is active.
   // It's a one-shot trap, not a wall that lasts the whole round: the FIRST
   // player it catches springs it, clearing this.barricade immediately so
-  // nobody else (including that same player again) is stopped by it later.
-  // The caster (D himself, or SE Copy-Catting Barricade) is immune and passes
-  // through freely without springing or consuming it -- the trap stays armed
-  // for the next actual victim. No separate staleness check is needed here:
-  // endTurn already clears an unsprung barricade the instant the caster's own
-  // next turn comes around, so a non-null this.barricade at this point is
-  // always still genuinely active.
-  applyBarricade(prev, steps, playerId) {
+  // nobody else is stopped by it later -- including the caster (D himself,
+  // or SE Copy-Catting Barricade): he gets no immunity from his own wall and
+  // can trap himself crossing it same as anyone else. User's call, reversing
+  // an earlier fix that had exempted the caster. No separate staleness check
+  // is needed here: endTurn already clears an unsprung barricade the instant
+  // the caster's own next turn comes around, so a non-null this.barricade at
+  // this point is always still genuinely active.
+  applyBarricade(prev, steps) {
     if (!this.barricade || steps <= 0) return steps;
-    if (this.barricade.casterId === playerId) return steps;
     let distance = this.barricade.tileId - prev;
     if (distance <= 0) distance += this._totalTiles;
     if (distance < steps) {
@@ -531,7 +530,7 @@ export class Room {
 
   movePlayer(player, steps) {
     const prev = player.position;
-    const effectiveSteps = this.applyBarricade(prev, steps, player.id);
+    const effectiveSteps = this.applyBarricade(prev, steps);
     let next = (prev + effectiveSteps) % this._totalTiles;
     if (next < 0) next += this._totalTiles;
     if (effectiveSteps > 0 && next < prev) {
@@ -1061,6 +1060,7 @@ export class Room {
     if (!owned || owned.ownerId !== playerId || tile.type !== TILE_TYPES.PROPERTY) {
       return { error: "You do not own this property" };
     }
+    if (this.hostileTakeover?.tileId === tileId) return { error: "A seized tile can't be built on" };
     if (owned.mortgaged) return { error: "You can't build on a mortgaged property" };
     const groupTiles = this._propertiesByGroup(tile.group);
     const ownsAll = groupTiles.every((t) => this.ownership[t.id]?.ownerId === playerId);
@@ -1085,6 +1085,7 @@ export class Room {
     if (!owned || owned.ownerId !== playerId || tile.type !== TILE_TYPES.PROPERTY) {
       return { error: "You do not own this property" };
     }
+    if (this.hostileTakeover?.tileId === tileId) return { error: "A seized tile can't be sold from" };
     if (!owned.houses) return { error: "There's nothing built here to sell" };
     if (this.rules.evenBuild) {
       const groupTiles = this._propertiesByGroup(tile.group);
@@ -1106,6 +1107,7 @@ export class Room {
     if (!owned || owned.ownerId !== playerId || !tile?.price) {
       return { error: "You do not own this property" };
     }
+    if (this.hostileTakeover?.tileId === tileId) return { error: "A seized tile can't be mortgaged" };
     if (owned.mortgaged) return { error: "Already mortgaged" };
     if (owned.houses) return { error: "Sell all houses on this property first" };
     const player = this.playerById(playerId);
@@ -1123,6 +1125,7 @@ export class Room {
     if (!owned || owned.ownerId !== playerId || !owned.mortgaged) {
       return { error: "This property isn't mortgaged" };
     }
+    if (this.hostileTakeover?.tileId === tileId) return { error: "A seized tile can't be unmortgaged" };
     const player = this.playerById(playerId);
     const cost = this.unmortgageCost(tileId);
     if (player.balance < cost) return { error: "Not enough coins" };

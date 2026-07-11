@@ -13,7 +13,13 @@
 // until H's own next turn comes around (not a global round boundary --
 // decisions.md; keeps the duration equally fair regardless of caster seat
 // position) -- see Room.revertHostileTakeover for the actual revert
-// mechanics.
+// mechanics. This is "control" (rent redirects to H, the tile is his color)
+// rather than full ownership rights -- Room.buyHouse/sellHouse/
+// mortgageProperty/unmortgageProperty all reject a tile currently under
+// Hostile Takeover, seized-from side included. User's call: without this,
+// a build/mortgage made during the seizure window would silently vanish
+// (or hand the original owner an unexpected un-mortgage) the moment
+// revertHostileTakeover restores its pre-seizure snapshot.
 import { TILE_TYPES } from "../board.js";
 
 const TURF_TILES = new Set([37, 38, 39, 41, 44, 45, 47]); // salmonLeft + tealLeft -- characters.md
@@ -22,11 +28,11 @@ const OWNABLE_TYPES = new Set([TILE_TYPES.PROPERTY, TILE_TYPES.TRANSIT, TILE_TYP
 export const kingpin = {
   id: "H",
   activeName: "Hostile Takeover",
-  description: "Seizes control of any tile (owned or unowned, not already his) until his next turn, then it reverts.",
-  passiveDescription: "Every 3rd landing on his turf (بابل, اربيل, كربلاء, بغداد, الطفيلة, السلط, اربد) triggers a 90% cut of that landing's rent.",
-  cooldownLabel: "7 turns",
+  description: "Seizes a tile -- owned or not. Reverts to its previous owner on his next turn.",
+  passiveDescription: "Every 3rd landing on his turf triggers a 90% cut of that landing's rent.",
+  cooldownLabel: "6 turns",
   targetType: "tile",
-  activeCooldown: 7,
+  activeCooldown: 6,
   passives: {
     onLanding(room, { holder, tileId }) {
       if (!TURF_TILES.has(tileId)) return;

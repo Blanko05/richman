@@ -154,10 +154,12 @@ function computeBackwardPath(from, to, totalTiles) {
 // leg also carries how many original tiles it covers, so a long straight
 // run can be given proportionally more time than a short one -- otherwise
 // a leg crossing 10 tiles would take exactly as long as one crossing 1.
-function computeLegWaypoints(from, to, sideLen, totalTiles, backward = false) {
-  const path = backward
-    ? computeBackwardPath(from, to, totalTiles)
-    : computeForwardPath(from, to, totalTiles);
+// Splits an already-known tile sequence into corner-to-corner legs (the
+// grouping step of computeLegWaypoints, factored out so a caller that
+// already has its own authoritative path -- Wrecking Tour's server-computed
+// route, see the wreckingTourSeq effect below -- can reuse it directly
+// instead of re-deriving the same path from a from/to pair.
+function groupPathIntoLegs(path, sideLen) {
   const legs = [];
   let legStart = 0;
   path.forEach((tileId, idx) => {
@@ -168,6 +170,13 @@ function computeLegWaypoints(from, to, sideLen, totalTiles, backward = false) {
     }
   });
   return legs;
+}
+
+function computeLegWaypoints(from, to, sideLen, totalTiles, backward = false) {
+  const path = backward
+    ? computeBackwardPath(from, to, totalTiles)
+    : computeForwardPath(from, to, totalTiles);
+  return groupPathIntoLegs(path, sideLen);
 }
 
 // A single leg eases in and out on its own (feels natural in the very
@@ -616,6 +625,86 @@ export default function BoardClassic({ state, myId, tokenMoving, onTokenMovingCh
     return [...walkLegs, teleportLeg];
   }
 
+  // Per-player, not per-effect-run: a move's glide+landing sequence is a
+  // chain of setTimeouts that can span 1-3+ seconds, but the move-detection
+  // effect below re-runs on EVERY server broadcast to the room -- including
+  // ones that have nothing to do with this player (another player buying a
+  // house, a reconnect, anything). Effect cleanups only clear timers created
+  // during that same run, so if every run stored its timers in one shared
+  // per-run array, an unrelated broadcast landing mid-glide would cancel the
+  // in-flight chain and orphan that player in movingIds/floatingIds forever
+  // (prevPositionsRef was already bumped to the final position at the START
+  // of the run that began the glide, so no later run ever sees a "move" for
+  // them again to restart it) -- stuck showing "Moving..."/no End Turn
+  // button until a refresh reset the component's state from scratch. Keying
+  // timers by player id in a ref that survives across renders, and only ever
+  // clearing a given id's OWN previous chain right before starting its next
+  // one, isolates each player's animation from every other broadcast.
+  const glideTimersRef = useRef(new Map());
+  useEffect(() => () => {
+    for (const list of glideTimersRef.current.values()) list.forEach(clearTimeout);
+    glideTimersRef.current.clear();
+  }, []);
+
+  // Walks a single token through an already-resolved leg list -- floats it
+  // for the duration, glides tileId-by-tileId (each leg's own pauseBeforeMs
+  // held first, if any), then settles into a brief landing state before
+  // clearing movingIds. Factored out of the generic move-detection effect
+  // below so the Wrecking Tour effect (further down) can drive the same
+  // glide manually for the one case that effect can't see on its own: SD
+  // starting the tour already on tile 6, where position ends up unchanged
+  // (a full lap back to itself) and so never registers as a "move".
+  // `delayMs` (0 by default) is when the very first leg starts -- lets the
+  // generic move effect stagger the glide behind its post-roll pause without
+  // that delay itself being vulnerable to the same cross-player cancellation.
+  function stepTokenAlongLegs(id, legs, delayMs = 0) {
+    const stale = glideTimersRef.current.get(id);
+    if (stale) stale.forEach(clearTimeout);
+    const myTimers = [];
+    glideTimersRef.current.set(id, myTimers);
+
+    const begin = () => {
+      setFloatingIds((s) => new Set(s).add(id));
+      let i = 0;
+      const stepLeg = () => {
+        if (i >= legs.length) {
+          setFloatingIds((s) => {
+            const next = new Set(s); next.delete(id); return next;
+          });
+          setLandingIds((s) => new Set(s).add(id));
+          myTimers.push(setTimeout(() => {
+            setLandingIds((s) => {
+              const next = new Set(s); next.delete(id); return next;
+            });
+            setMovingIds((s) => {
+              const next = new Set(s); next.delete(id); return next;
+            });
+            glideTimersRef.current.delete(id);
+          }, LANDING_MS));
+          return;
+        }
+        const leg = legs[i];
+        const runLeg = () => {
+          setVisualPositions((m) => new Map(m).set(id, { tileId: leg.tileId, glideMs: leg.glideMs, glideEase: leg.glideEase }));
+          i += 1;
+          myTimers.push(setTimeout(stepLeg, leg.glideMs));
+        };
+        if (leg.pauseBeforeMs) {
+          myTimers.push(setTimeout(runLeg, leg.pauseBeforeMs));
+        } else {
+          runLeg();
+        }
+      };
+      stepLeg();
+    };
+
+    if (delayMs) {
+      myTimers.push(setTimeout(begin, delayMs));
+    } else {
+      begin();
+    }
+  }
+
   // A "move back N spaces" card's direction only exists on the broadcast
   // where it's sitting in pendingAction, waiting on confirmCardMove --
   // confirmCardMove clears pendingAction in the very same beat it actually
@@ -667,47 +756,18 @@ export default function BoardClassic({ state, myId, tokenMoving, onTokenMovingCh
     if (moves.length) {
       setMovingIds((s) => new Set([...s, ...moves.map((m) => m.id)]));
       const startDelay = rollJustHappened ? 1000 : 0;
-      timers.push(setTimeout(() => {
-        playMoveSwoosh();
-        moves.forEach(({ id, from, to }) => {
-          const isJailTeleport = jailJustHappened && id === jailedPlayerId;
-          const isBackwardCardMove = !isJailTeleport && backwardMoverId === id;
-          const legs = buildResolvedLegs({
-            from, to, isJailTeleport, jailFromDestination: jailFromTileId, backward: isBackwardCardMove,
-          });
-          setFloatingIds((s) => new Set(s).add(id));
-          let i = 0;
-          const stepLeg = () => {
-            if (i >= legs.length) {
-              setFloatingIds((s) => {
-                const next = new Set(s); next.delete(id); return next;
-              });
-              setLandingIds((s) => new Set(s).add(id));
-              timers.push(setTimeout(() => {
-                setLandingIds((s) => {
-                  const next = new Set(s); next.delete(id); return next;
-                });
-                setMovingIds((s) => {
-                  const next = new Set(s); next.delete(id); return next;
-                });
-              }, LANDING_MS));
-              return;
-            }
-            const leg = legs[i];
-            const runLeg = () => {
-              setVisualPositions((m) => new Map(m).set(id, { tileId: leg.tileId, glideMs: leg.glideMs, glideEase: leg.glideEase }));
-              i += 1;
-              timers.push(setTimeout(stepLeg, leg.glideMs));
-            };
-            if (leg.pauseBeforeMs) {
-              timers.push(setTimeout(runLeg, leg.pauseBeforeMs));
-            } else {
-              runLeg();
-            }
-          };
-          stepLeg();
+      // Sound-only, so it's fine for this one to still ride the shared
+      // per-run `timers` array -- losing a swoosh to an unlucky re-render is
+      // harmless, unlike losing a movingIds cleanup.
+      timers.push(setTimeout(() => playMoveSwoosh(), startDelay));
+      moves.forEach(({ id, from, to }) => {
+        const isJailTeleport = jailJustHappened && id === jailedPlayerId;
+        const isBackwardCardMove = !isJailTeleport && backwardMoverId === id;
+        const legs = buildResolvedLegs({
+          from, to, isJailTeleport, jailFromDestination: jailFromTileId, backward: isBackwardCardMove,
         });
-      }, startDelay));
+        stepTokenAlongLegs(id, legs, startDelay);
+      });
     }
 
     if (boughtIds.length) {
@@ -722,42 +782,55 @@ export default function BoardClassic({ state, myId, tokenMoving, onTokenMovingCh
   // SD's Wrecking Tour (decisions.md): player.position now genuinely changes
   // to the tour's destination (see conductor.js), so the generic move-
   // detection effect above already animates SD's token gliding there same as
-  // any other move -- no custom glide code needed for that part. All that's
-  // left here is timing the existing sell-house/hotel sound to roughly when
-  // the bus reaches each demolished tile, which the generic move effect has
-  // no notion of.
+  // any other move -- EXCEPT when SD starts the tour already sitting on tile
+  // 6 (the destination): the tour is then a near-full lap all the way back
+  // to the same tile, so position ends up unchanged and that effect's
+  // prev-vs-current diff never sees a move to animate. Handled below by
+  // driving the glide manually for that one case, using the exact path the
+  // server already computed (also fixes the demolish-sound timing for the
+  // same case -- it used to be derived from a fresh from/to walk that
+  // degenerates to zero legs whenever from === to, same root cause).
   const prevWreckingTourSeqRef = useRef(wreckingTourSeq);
   useEffect(() => {
     if (wreckingTourSeq === prevWreckingTourSeqRef.current) return;
     prevWreckingTourSeqRef.current = wreckingTourSeq;
     const tour = lastWreckingTour;
-    if (!tour || !tour.demolished.length) return;
-    const { startTileId, path, demolished } = tour;
+    if (!tour) return;
+    const { casterId, startTileId, path, demolished } = tour;
     const destinationTileId = path[path.length - 1];
     const timers = [];
+    const legs = groupPathIntoLegs(path, sideLen).map((leg, i, arr) => ({
+      ...leg,
+      glideMs: Math.min(LEG_MAX_MS, Math.max(LEG_MIN_MS, leg.tileCount * MS_PER_TILE)),
+      glideEase: legEasing(i, arr.length),
+    }));
+
+    if (startTileId === destinationTileId) {
+      setMovingIds((s) => new Set(s).add(casterId));
+      stepTokenAlongLegs(casterId, legs);
+    }
 
     // Demolished tiles don't line up with leg boundaries (a leg can span
     // several tiles at once), so this estimates each one's arrival time
-    // proportionally within its leg, using the exact per-tile path the
-    // server already computed and the same leg math the generic move effect
-    // uses for this same from/to -- close enough to play the sound roughly
-    // as the bus reaches that tile, without needing tile-by-tile glide steps.
-    const legs = computeLegWaypoints(startTileId, destinationTileId, sideLen, board.length, false);
-    let elapsedMs = 0;
-    const arrivalDelayByPathIndex = [];
-    legs.forEach((leg) => {
-      const glideMs = Math.min(LEG_MAX_MS, Math.max(LEG_MIN_MS, leg.tileCount * MS_PER_TILE));
-      const perTileMs = glideMs / leg.tileCount;
-      for (let t = 0; t < leg.tileCount; t++) {
-        elapsedMs += perTileMs;
-        arrivalDelayByPathIndex.push(elapsedMs);
-      }
-    });
-    demolished.forEach(({ tileId }) => {
-      const pathIndex = path.indexOf(tileId);
-      const delay = pathIndex >= 0 ? arrivalDelayByPathIndex[pathIndex] : null;
-      if (delay != null) timers.push(setTimeout(() => playSellBuilding(), delay));
-    });
+    // proportionally within its leg -- close enough to play the sound
+    // roughly as the bus reaches that tile, without needing tile-by-tile
+    // glide steps.
+    if (demolished.length) {
+      let elapsedMs = 0;
+      const arrivalDelayByPathIndex = [];
+      legs.forEach((leg) => {
+        const perTileMs = leg.glideMs / leg.tileCount;
+        for (let t = 0; t < leg.tileCount; t++) {
+          elapsedMs += perTileMs;
+          arrivalDelayByPathIndex.push(elapsedMs);
+        }
+      });
+      demolished.forEach(({ tileId }) => {
+        const pathIndex = path.indexOf(tileId);
+        const delay = pathIndex >= 0 ? arrivalDelayByPathIndex[pathIndex] : null;
+        if (delay != null) timers.push(setTimeout(() => playSellBuilding(), delay));
+      });
+    }
 
     return () => timers.forEach(clearTimeout);
   }, [wreckingTourSeq, lastWreckingTour, board.length, sideLen]);

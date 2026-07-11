@@ -17,8 +17,8 @@
 export const enforcer = {
   id: "Z",
   activeName: "Curse",
-  description: "Targets a player -- until his own next turn, everything they'd earn goes to him instead. He can never pay to leave the Holding Pen early.",
-  passiveDescription: "Takes a 5% cut of every completed trade's total value and 5% of every tax payment.",
+  description: "Targets a player and redirects everything they earn to him, until his own next turn.",
+  passiveDescription: "Takes 5% of every trade's value and 5% of every tax payment. Can never pay to leave the Holding Pen early.",
   cooldownLabel: "7 turns",
   targetType: "player",
   activeCooldown: 7,

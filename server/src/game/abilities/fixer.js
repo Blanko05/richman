@@ -26,9 +26,9 @@ import { ABILITIES } from "./index.js";
 export const fixer = {
   id: "SE",
   activeName: "Copy Cat",
-  description: "Copies another player's active ability and uses an independent instance of it immediately, as if he owned it. First pick who to copy, then that ability's own target (if it needs one).",
+  description: "Copies another player's active ability and uses it immediately as his own. Pick who to copy, then their ability's target if it needs one.",
   passiveDescription: "Doubles every bank payout (Start bonus, card draws, refunds, other characters' ability cuts).",
-  cooldownLabel: "5 + half the copied ability's cooldown, rounded down",
+  cooldownLabel: "5 turns + half the copied ability's cooldown (rounded down)",
   // Distinct from plain "player" (Curse) -- tells the client this is a
   // two-step pick: step 1 (this value) is who to copy from, and step 2
   // depends on THAT player's own ability's targetType (see App.jsx's
@@ -39,8 +39,13 @@ export const fixer = {
     return amount * 2;
   },
   active(room, caster, { copyFromId, params } = {}) {
+    // Unlike Curse/Hostile Takeover, Copy Cat never acts ON the target --
+    // it only reads which character they picked, then runs an independent
+    // copy of that ability as SE himself. A bankrupt/left player's character
+    // choice is still on record, so there's nothing bankruptcy-unsafe about
+    // copying it. User's call.
     const target = room.playerById(copyFromId);
-    if (!target || target.bankrupt || target.left) return { error: "Invalid target" };
+    if (!target) return { error: "Invalid target" };
     if (copyFromId === caster.id) return { error: "You can't Copy Cat yourself" };
     if (!target.character) return { error: "Target has no character" };
     const ability = ABILITIES[target.character];

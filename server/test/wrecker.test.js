@@ -69,7 +69,7 @@ test("passive: Y collects from their own demolish/mortgage too -- no self-exclus
   assert.equal(wreckerPlayer.balance, before + refund + 50);
 });
 
-test("active: Detonate fully wipes a hotel to an empty lot and arms the 9-turn cooldown", () => {
+test("active: Detonate fully wipes a hotel to an empty lot and arms the 10-turn cooldown", () => {
   const room = makeRoom(["Wrecker", "Victim"]);
   after(() => cleanup(room));
   const wreckerPlayer = room.playerById("p0");
@@ -81,7 +81,7 @@ test("active: Detonate fully wipes a hotel to an empty lot and arms the 9-turn c
 
   assert.deepEqual(result, { ok: true, levelsRemoved: 5 });
   assert.equal(room.ownership[10].houses, 0);
-  assert.equal(wreckerPlayer.abilityCooldown, 9);
+  assert.equal(wreckerPlayer.abilityCooldown, 10);
 });
 
 test("active: Detonate on an owned empty lot force-mortgages it instead, for free, and still arms the shortest (4-turn) cooldown", () => {

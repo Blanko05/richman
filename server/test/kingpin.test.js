@@ -91,7 +91,7 @@ test("active: Hostile Takeover seizes an owned tile and reverts to the original 
 
   const result = room.useAbility("p0", { tileId: 1 });
   assert.deepEqual(result, { ok: true, tileId: 1 });
-  assert.equal(kingpinPlayer.abilityCooldown, 7);
+  assert.equal(kingpinPlayer.abilityCooldown, 6);
   assert.equal(room.ownership[1].ownerId, "p0");
   assert.equal(room.ownership[1].houses, 2, "development is preserved, not wiped");
   assert.ok(kingpinPlayer.properties.includes(1));
@@ -107,6 +107,54 @@ test("active: Hostile Takeover seizes an owned tile and reverts to the original 
   assert.equal(room.ownership[1].houses, 2);
   assert.ok(owner.properties.includes(1));
   assert.ok(!kingpinPlayer.properties.includes(1));
+});
+
+test("active: Hostile Takeover grants control, not full ownership rights -- build/sell/mortgage are all rejected on a seized tile", () => {
+  const room = makeRoom(["Kingpin", "Owner"]);
+  after(() => cleanup(room));
+  const kingpinPlayer = room.playerById("p0");
+  kingpinPlayer.character = "H";
+  ownTile(room, "p1", 1, 1); // one house already built, unmortgaged
+
+  room.useAbility("p0", { tileId: 1 });
+  assert.equal(room.ownership[1].ownerId, "p0", "seized -- ownerId genuinely changes");
+
+  assert.equal(room.buyHouse("p0", 1).error, "A seized tile can't be built on");
+  assert.equal(room.sellHouse("p0", 1).error, "A seized tile can't be sold from");
+  assert.equal(room.mortgageProperty("p0", 1).error, "A seized tile can't be mortgaged");
+  assert.equal(room.ownership[1].houses, 1, "none of the rejected calls actually changed anything");
+});
+
+test("active: Hostile Takeover also blocks paying off a mortgage that predates the seizure", () => {
+  const room = makeRoom(["Kingpin", "Owner"]);
+  after(() => cleanup(room));
+  const kingpinPlayer = room.playerById("p0");
+  kingpinPlayer.character = "H";
+  ownTile(room, "p1", 1);
+  room.ownership[1].mortgaged = true;
+
+  room.useAbility("p0", { tileId: 1 });
+  assert.equal(room.ownership[1].mortgaged, true, "Hostile Takeover preserves the mortgage state as-is");
+
+  const result = room.unmortgageProperty("p0", 1);
+  assert.equal(result.error, "A seized tile can't be unmortgaged");
+});
+
+test("active: build/sell rights on a formerly-seized tile work normally again once it reverts", () => {
+  const room = makeRoom(["Kingpin", "Owner", "Third"]);
+  after(() => cleanup(room));
+  const kingpinPlayer = room.playerById("p0");
+  kingpinPlayer.character = "H";
+  ownTile(room, "p1", 1, 1);
+
+  room.useAbility("p0", { tileId: 1 });
+  room.endTurn(); // p0 -> p1
+  room.endTurn(); // p1 -> p2
+  room.endTurn(); // p2 -> p0 (H's own turn again -- reverts)
+
+  assert.equal(room.ownership[1].ownerId, "p1", "back to the original owner");
+  const result = room.sellHouse("p1", 1);
+  assert.equal(result.ok, true, "rights are fully restored once it reverts");
 });
 
 test("active: Hostile Takeover lasts a full lap even when cast by the LAST seat in turn order -- not just until the next global round boundary", () => {

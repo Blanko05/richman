@@ -34,17 +34,22 @@ export default function CharacterPicker({ players, myId, characters, abilities }
             disabled={isTaken}
             title={isTaken ? `${char.name} (taken)` : char.name}
           >
-            <span className="lobby-character-card-name">{char.name}</span>
+            <div className="lobby-character-card-head">
+              <span className="lobby-character-card-name">{char.name}</span>
+              {isSelected && <span className="lobby-character-card-check">✓ selected</span>}
+              {ability && <span className="lobby-character-card-cooldown">⏱ {ability.cooldownLabel}</span>}
+            </div>
             {ability && (
-              <>
-                <span className="lobby-character-card-blurb">
-                  <strong>Passive:</strong> {ability.passiveDescription}
-                </span>
-                <span className="lobby-character-card-blurb">
-                  <strong>{ability.activeName}:</strong> {ability.description}
-                </span>
-                <span className="lobby-character-card-cooldown">Cooldown: {ability.cooldownLabel}</span>
-              </>
+              <div className="lobby-character-card-body">
+                <p className="lobby-character-card-row">
+                  <span className="lobby-character-card-tag">Passive</span>
+                  {ability.passiveDescription}
+                </p>
+                <p className="lobby-character-card-row">
+                  <span className="lobby-character-card-tag active">{ability.activeName}</span>
+                  {ability.description}
+                </p>
+              </div>
             )}
           </button>
         );

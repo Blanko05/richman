@@ -12,9 +12,9 @@
 // Active: Wrecking Tour starts a bus from SD's current position and travels
 // forward (wrapping the board loop if needed) until it reaches tile 6 (the
 // Coster Station), demolishing up to 2 building levels on every property tile
-// along the way -- including SD's own, if any fall on the path; this isn't a
-// targeted ability, so the no-self-targeting rule doesn't come into it (see
-// decisions.md). SD actually ends the tour AT tile 6 -- his position updates
+// along the way, skipping any property SD owns himself (user's call -- the
+// sweep still passes over his own tiles, it just doesn't tear them down).
+// SD actually ends the tour AT tile 6 -- his position updates
 // and the tile's normal landing effects resolve (rent, or an unowned-station
 // buy prompt), the same shape as a card's "advanceTo" effect. Refuses to run
 // while ANY pendingAction is already open (not just SD's own) -- even on your
@@ -35,7 +35,7 @@ const TOUR_DESTINATION_TILE = 6;
 export const conductor = {
   id: "SD",
   activeName: "Wrecking Tour",
-  description: "Sends a bus from his current position to tile 6 (Coster Station), destroying up to 2 building levels on every property it passes.",
+  description: "Takes a bus from his current position to tile 6 (Coster Station), destroying up to 2 building levels on every property it passes.",
   passiveDescription: "Doubles rent on stations he owns; charges a flat $50 toll on any station he doesn't own.",
   cooldownLabel: "8 turns",
   targetType: "none",
@@ -71,6 +71,7 @@ export const conductor = {
       if (tile.type !== TILE_TYPES.PROPERTY) continue;
       const owned = room.ownership[tileId];
       if (!owned || !owned.houses) continue;
+      if (owned.ownerId === caster.id) continue;
       const levelsRemoved = Math.min(LEVELS_PER_STOP, owned.houses);
       owned.houses -= levelsRemoved;
       totalLevelsRemoved += levelsRemoved;

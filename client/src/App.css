@@ -415,6 +415,50 @@
   width: 440px;
 }
 
+/* Characters-mode waitroom needs far more width than a plain sign-in card --
+   the character roster is dense text that was previously squeezed into the
+   same 440px column as everything else. Split into two columns instead: the
+   room/players/icon/rules/actions stack (unchanged content, just narrower)
+   on the left, and the character picker -- which actually benefits from
+   room -- on the right. */
+.characters-waitroom-card {
+  width: min(880px, 94vw);
+}
+.characters-waitroom-columns {
+  display: grid;
+  grid-template-columns: 320px 1fr;
+  gap: 24px;
+  /* Default (stretch) row alignment on purpose: the right column matches
+     whatever height the left column's content naturally settles at, so the
+     character list fills that same height and scrolls internally instead of
+     just running on past the bottom of the shorter left column. */
+}
+.characters-waitroom-left {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-width: 0;
+}
+.characters-waitroom-right {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+  min-height: 0;
+}
+@media (max-width: 720px) {
+  .characters-waitroom-columns {
+    grid-template-columns: 1fr;
+  }
+  /* Stacked layout: the two columns are separate grid rows now, so there's
+     no shared row height for the right column to stretch to -- fall back to
+     a viewport-relative cap instead of the flex:1 it uses side-by-side. */
+  .lobby-character-picker {
+    flex: none;
+    max-height: 60vh;
+  }
+}
+
 .waitroom-code-block {
   text-align: center;
   padding: 6px 0 2px;
@@ -781,21 +825,24 @@
    instead of a row of circular swatches. */
 
 .lobby-character-picker {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-  gap: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding-right: 4px;
 }
 
 .lobby-character-card {
   display: flex;
   flex-direction: column;
-  align-items: flex-start;
-  gap: 4px;
+  align-items: stretch;
+  gap: 6px;
   text-align: left;
-  background: var(--panel);
-  border: 2.5px solid var(--border);
-  border-radius: 8px;
-  padding: 8px 10px;
+  text-transform: none;
+  letter-spacing: normal;
+  padding: 10px 12px;
   cursor: pointer;
   transition: transform 0.1s, box-shadow 0.1s;
 }
@@ -805,22 +852,66 @@
 }
 .lobby-character-card:active:not(:disabled) { transform: none; box-shadow: none; }
 
+.lobby-character-card-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
 .lobby-character-card-name {
-  font-size: 12px;
+  font-family: "Alfa Slab One", "Arvo", Georgia, serif;
+  font-size: 13px;
   font-weight: 700;
   letter-spacing: 0.3px;
+  text-transform: uppercase;
   color: var(--accent);
 }
-.lobby-character-card-blurb {
+.lobby-character-card-check {
   font-size: 10.5px;
-  line-height: 1.4;
+  font-weight: 700;
+  letter-spacing: 0.3px;
+  text-transform: uppercase;
+  color: var(--good);
+  margin-right: auto;
+  padding-left: 8px;
+}
+.lobby-character-card-cooldown {
+  font-size: 10.5px;
+  color: var(--text-dim);
+  white-space: nowrap;
+}
+
+.lobby-character-card-body {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 5px;
+  flex: 1;
+}
+.lobby-character-card-row {
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.45;
   color: var(--text-dim);
 }
-.lobby-character-card-blurb strong { color: var(--text); }
-.lobby-character-card-cooldown {
-  font-size: 10px;
-  font-style: italic;
-  color: var(--text-dim);
+.lobby-character-card-tag {
+  display: inline-block;
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+  color: var(--text);
+  background: var(--panel-2);
+  border: 1px solid var(--border-light);
+  border-radius: 4px;
+  padding: 1px 5px;
+  margin-right: 6px;
+  vertical-align: middle;
+}
+.lobby-character-card-tag.active {
+  color: var(--accent-ink);
+  background: color-mix(in srgb, var(--accent) 22%, var(--panel-2));
+  border-color: var(--accent);
 }
 
 .lobby-character-card.selected {
@@ -1670,12 +1761,24 @@
 }
 
 .character-panel-cooldown {
-  font-size: 12px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.3px;
+  text-transform: uppercase;
+  white-space: nowrap;
   color: var(--text-dim);
+  background: var(--panel-2);
+  border: 1.5px solid var(--border-light);
+  border-radius: 20px;
+  padding: 3px 10px;
 }
 .character-panel-cooldown.ready {
-  color: #2ecc71;
-  font-weight: 700;
+  color: #fff;
+  background: var(--good);
+  border-color: var(--good);
 }
 
 .character-panel-body {
@@ -1688,10 +1791,6 @@
   color: var(--text);
 }
 .character-panel-body p:last-child { margin-bottom: 0; }
-.character-panel-cooldown-note {
-  color: var(--text-dim) !important;
-  font-style: italic;
-}
 
 .character-panel-targeting {
   display: flex;
@@ -2806,6 +2905,72 @@ select {
   border-color: var(--accent);
 }
 
+.panel-list-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.panel-roster-btn {
+  font-size: 8px;
+  font-weight: 700;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  background: var(--accent);
+  color: var(--accent-ink);
+  border: 1.5px solid var(--border);
+  border-radius: 5px;
+  padding: 3px 8px;
+  cursor: pointer;
+  box-shadow: 2px 2px 0 var(--border);
+  transition: transform 0.08s ease, box-shadow 0.08s ease, filter 0.15s ease;
+}
+.panel-roster-btn:hover { filter: brightness(1.08); }
+.panel-roster-btn:active { transform: translate(2px, 2px); box-shadow: 0 0 0 var(--border); }
+
+/* ── Character roster modal (in-game "who's playing what" reference) ── */
+.roster-modal {
+  width: min(880px, 100%);
+}
+.roster-modal-body {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
+  /* Default (stretch) row alignment on purpose: every card in a row matches
+     the tallest one instead of trailing off at its own natural height. */
+  gap: 14px;
+}
+.roster-entry {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.roster-entry-player {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.roster-entry-name {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text);
+}
+.roster-no-character {
+  margin: 0;
+  font-size: 12px;
+  font-style: italic;
+  color: var(--text-dim);
+}
+/* .lobby-character-card is normally a <button> and gets its chrome (border,
+   background, box-shadow) from the global `button` rule -- this is a plain
+   <div> (nothing to click), so it needs that chrome supplied directly. */
+.roster-ability-card {
+  border: 2.5px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel);
+  cursor: default;
+  flex: 1;
+}
+
 /* Player rows */
 .panel-player-list {
   display: flex;
@@ -2920,6 +3085,7 @@ select {
   border: 1px solid var(--border);
   padding: 1px 5px;
 }
+.badge-character { background: var(--panel-2); color: var(--text-dim); border-color: var(--border-light); }
 .badge-bankrupt { background: #e74c3c; color: #fff; }
 .badge-left     { background: #7f8c8d;  color: #fff; }
 .badge-dc       { background: #3498db;   color: #fff; }

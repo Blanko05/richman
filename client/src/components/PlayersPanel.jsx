@@ -3,6 +3,7 @@ import { socket } from "../socket";
 import ThemeToggle from "./ThemeToggle";
 import PlayerAvatar from "./PlayerAvatar";
 import ConfirmDialog from "./ConfirmDialog";
+import CharacterRosterModal from "./CharacterRosterModal";
 import { IconClock } from "./icons";
 
 function TurnCountdown({ deadline }) {
@@ -38,6 +39,7 @@ export default function PlayersPanel({ state, myId, onLeave, theme, onToggleThem
   }
 
   const [confirmingLeave, setConfirmingLeave] = useState(false);
+  const [showRoster, setShowRoster] = useState(false);
   const [sortByTurn, setSortByTurn] = useState(false);
   const sortedPlayers = sortByTurn ? players : [...players].sort((a, b) => b.balance - a.balance);
 
@@ -111,6 +113,8 @@ export default function PlayersPanel({ state, myId, onLeave, theme, onToggleThem
         />
       )}
 
+      {showRoster && <CharacterRosterModal state={state} onClose={() => setShowRoster(false)} />}
+
       {/* Winner banner */}
       {winnerId && (
         <div className="panel-winner-banner">
@@ -138,12 +142,19 @@ export default function PlayersPanel({ state, myId, onLeave, theme, onToggleThem
       {/* Player list */}
       <div className="panel-list-header">
         <span className="panel-list-label">Players</span>
-        <button
-          className="panel-sort-btn"
-          onClick={() => setSortByTurn((v) => !v)}
-        >
-          {sortByTurn ? "By Turn" : "By Balance"}
-        </button>
+        <div className="panel-list-header-actions">
+          {state.mode === "characters" && (
+            <button className="panel-roster-btn" onClick={() => setShowRoster(true)}>
+              🃏 Characters
+            </button>
+          )}
+          <button
+            className="panel-sort-btn"
+            onClick={() => setSortByTurn((v) => !v)}
+          >
+            {sortByTurn ? "By Turn" : "By Balance"}
+          </button>
+        </div>
       </div>
       <div className="panel-player-list">
         {sortedPlayers.map((p) => {
@@ -172,6 +183,9 @@ export default function PlayersPanel({ state, myId, onLeave, theme, onToggleThem
                   {p.id === hostId && <span className="panel-host-badge">host</span>}
                 </span>
                 <div className="panel-player-status">
+                  {p.character && state.characters?.[p.character] && (
+                    <span className="panel-badge badge-character">{state.characters[p.character].name}</span>
+                  )}
                   {p.bankrupt && <span className="panel-badge badge-bankrupt">bankrupt</span>}
                   {p.left && <span className="panel-badge badge-left">left</span>}
                   {!p.connected && !p.left && <span className="panel-badge badge-dc">reconnecting…</span>}

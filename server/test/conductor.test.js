@@ -139,6 +139,22 @@ test("active: Wrecking Tour clamps at 2 levels even if a property has more, and 
   assert.equal(result.totalLevelsRemoved, 4); // 2 from tile 1 + 2 from tile 3
 });
 
+test("active: Wrecking Tour skips SD's own properties along the path -- only demolishes other players'", () => {
+  const room = makeRoom(["Conductor", "Victim"]);
+  after(() => cleanup(room));
+  const conductorPlayer = room.playerById("p0");
+  conductorPlayer.character = "SD";
+  conductorPlayer.position = 0; // path: 1(prop),2(card),3(prop),4(tax),5(prop),6(destination)
+  ownTile(room, "p0", 1, 3); // SD's own -- must survive untouched
+  ownTile(room, "p1", 3, 2); // someone else's -- still gets demolished
+
+  const result = room.useAbility("p0", {});
+  assert.equal(result.ok, true);
+  assert.equal(room.ownership[1].houses, 3, "SD's own property is skipped entirely");
+  assert.equal(room.ownership[3].houses, 0, "another player's property on the same path is still torn down");
+  assert.deepEqual(result, { ok: true, tilesPassed: 6, totalLevelsRemoved: 2 }, "SD's own 3 levels don't count toward the total either");
+});
+
 test("active: Wrecking Tour wraps around the board loop if SD's position is past tile 6", () => {
   const room = makeRoom(["Conductor", "VictimA"]);
   after(() => cleanup(room));

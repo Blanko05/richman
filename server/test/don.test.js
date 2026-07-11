@@ -142,25 +142,18 @@ test("active: Barricade lets movement through untouched when the roll doesn't re
   assert.equal(mover.position, 5);
 });
 
-test("active: the caster is immune to their own Barricade -- passes through freely without springing it", () => {
+test("active: the caster is NOT immune to their own Barricade -- can get stuck in it like anyone else", () => {
   const room = makeRoom(["Don", "Other"]);
   after(() => cleanup(room));
   const donPlayer = room.playerById("p0");
-  const other = room.playerById("p1");
   donPlayer.character = "D";
   room.useAbility("p0", { tileId: 4 });
 
   donPlayer.position = 0;
-  room.movePlayer(donPlayer, 10); // would normally land on tile 10 -- caster ignores the barricade entirely
+  room.movePlayer(donPlayer, 10); // would normally land on tile 10 -- his own wall catches him too
 
-  assert.equal(donPlayer.position, 10, "caster passes straight through, unaffected");
-  assert.ok(room.barricade, "still armed -- the caster's crossing doesn't spring or consume it");
-
-  other.position = 0;
-  room.movePlayer(other, 10); // now a real victim crosses it
-
-  assert.equal(other.position, 4, "the next actual player is still stopped short");
-  assert.equal(room.barricade, null, "now sprung and cleared");
+  assert.equal(donPlayer.position, 4, "the caster is stopped short by his own barricade, same as anyone else");
+  assert.equal(room.barricade, null, "sprung and cleared -- his own crossing consumes it");
 });
 
 test("active: Barricade is scoped to forward movement only -- a backward card move ignores it", () => {

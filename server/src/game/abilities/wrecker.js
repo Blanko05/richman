@@ -21,7 +21,7 @@
 // rejections below. User's call (decisions.md).
 import { TILE_TYPES } from "../board.js";
 
-const DETONATE_COOLDOWN_BY_LEVELS = [4, 5, 6, 7, 8, 9];
+const DETONATE_COOLDOWN_BY_LEVELS = [4, 5, 6, 7, 8, 10];
 
 export const wrecker = {
   id: "Y",
@@ -29,9 +29,9 @@ export const wrecker = {
   // Display metadata for the client (CharacterPanel) -- targetType tells it
   // what kind of picker to show; "tile" means clicking a board tile submits
   // { tileId }.
-  description: "Fully destroys the building on a targeted property (yours or another player's), leaving it an empty lot. If there's nothing built there already, forces it into mortgage instead.",
-  passiveDescription: "Collects $50 from the bank whenever any player demolishes a house/hotel level or mortgages a property.",
-  cooldownLabel: "4-9 turns, scaling with how much was destroyed",
+  description: "Fully destroys the building on another player's property, leaving an empty lot -- or forces it into mortgage if nothing's built there.",
+  passiveDescription: "Collects $50 whenever any player demolishes a building level or mortgages a property.",
+  cooldownLabel: "4-10 turns (scales with damage dealt)",
   targetType: "tile",
   activeCooldown: (result) => DETONATE_COOLDOWN_BY_LEVELS[result.levelsRemoved],
   passives: {

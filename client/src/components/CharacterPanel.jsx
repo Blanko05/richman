@@ -44,7 +44,7 @@ export default function CharacterPanel({ state, myId, onUseAbility, targeting, a
       <div className="character-panel-header">
         <span className="character-panel-name">{info?.name || me.character}</span>
         <span className={`character-panel-cooldown${ready ? " ready" : ""}`}>
-          {ready ? "Ready" : `⏳ ${me.abilityCooldown}`}
+          {ready ? "✓ Ready" : `⏳ ${me.abilityCooldown} turn${me.abilityCooldown === 1 ? "" : "s"} left`}
         </span>
       </div>
 
@@ -52,7 +52,6 @@ export default function CharacterPanel({ state, myId, onUseAbility, targeting, a
         <div className="character-panel-body">
           <p className="character-panel-passive"><strong>Passive:</strong> {ability.passiveDescription}</p>
           <p className="character-panel-active-desc"><strong>{ability.activeName}:</strong> {ability.description}</p>
-          <p className="character-panel-cooldown-note">Cooldown: {ability.cooldownLabel}</p>
         </div>
       )}
 

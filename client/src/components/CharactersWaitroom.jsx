@@ -62,97 +62,100 @@ export default function CharactersWaitroom({ state, myId, theme, onToggleTheme, 
           </div>
         </div>
 
-        <div className="lobby-form-card waitroom-card visible">
-          {/* Room code hero */}
-          <div className="waitroom-code-block">
-            <div className="waitroom-code-label">Room Code</div>
-            <div className="waitroom-code-row">
-              <div className="waitroom-code">{state.code}</div>
-              <button
-                className="waitroom-copy-btn"
-                onClick={copyRoomCode}
-                title="Copy room code"
-                aria-label="Copy room code"
-              >
-                {codeCopied ? <IconCheck /> : <IconCopy />}
-              </button>
-            </div>
-            <div className="waitroom-code-hint">Share this with friends</div>
-          </div>
-
-          <div className="lobby-divider"><span>Players {state.players.length} / 6</span></div>
-
-          {/* Player slots */}
-          <div className="waitroom-players">
-            {state.players.map((p) => (
-              <div key={p.id} className="waitroom-player-row">
-                <span className="waitroom-player-dot" style={{ background: p.color }} />
-                <span className="waitroom-player-name">
-                  {p.name}{p.id === myId ? " (you)" : ""}
-                </span>
-                {state.hostId === p.id && <span className="waitroom-host-badge">HOST</span>}
-                {!p.icon && <span className="error">No icon yet</span>}
-                {!p.character && <span className="error">No character yet</span>}
+        <div className="lobby-form-card waitroom-card characters-waitroom-card visible">
+          <div className="characters-waitroom-columns">
+            {/* ── Left: room, players, icon, rules, actions ── */}
+            <div className="characters-waitroom-left">
+              {/* Room code hero */}
+              <div className="waitroom-code-block">
+                <div className="waitroom-code-label">Room Code</div>
+                <div className="waitroom-code-row">
+                  <div className="waitroom-code">{state.code}</div>
+                  <button
+                    className="waitroom-copy-btn"
+                    onClick={copyRoomCode}
+                    title="Copy room code"
+                    aria-label="Copy room code"
+                  >
+                    {codeCopied ? <IconCheck /> : <IconCopy />}
+                  </button>
+                </div>
+                <div className="waitroom-code-hint">Share this with friends</div>
               </div>
-            ))}
-            {Array.from({ length: Math.max(0, 2 - state.players.length) }).map((_, i) => (
-              <div key={`empty-${i}`} className="waitroom-player-row waitroom-player-empty">
-                <span className="waitroom-player-dot" style={{ background: "rgba(255,255,255,0.08)", border: "1px dashed rgba(201,150,10,0.25)" }} />
-                <span className="waitroom-player-name" style={{ opacity: 0.3, fontStyle: "italic" }}>Waiting…</span>
+
+              <div className="lobby-divider"><span>Players {state.players.length} / 6</span></div>
+
+              {/* Player slots */}
+              <div className="waitroom-players">
+                {state.players.map((p) => (
+                  <div key={p.id} className="waitroom-player-row">
+                    <span className="waitroom-player-dot" style={{ background: p.color }} />
+                    <span className="waitroom-player-name">
+                      {p.name}{p.id === myId ? " (you)" : ""}
+                    </span>
+                    {state.hostId === p.id && <span className="waitroom-host-badge">HOST</span>}
+                  </div>
+                ))}
+                {Array.from({ length: Math.max(0, 2 - state.players.length) }).map((_, i) => (
+                  <div key={`empty-${i}`} className="waitroom-player-row waitroom-player-empty">
+                    <span className="waitroom-player-dot" style={{ background: "rgba(255,255,255,0.08)", border: "1px dashed rgba(201,150,10,0.25)" }} />
+                    <span className="waitroom-player-name" style={{ opacity: 0.3, fontStyle: "italic" }}>Waiting…</span>
+                  </div>
+                ))}
               </div>
-            ))}
-          </div>
 
-          {/* Your token icon */}
-          <div className="lobby-input-group">
-            <label className="lobby-input-label">Your Icon</label>
-            <IconPicker players={state.players} myId={myId} />
-            {!me?.icon && <div className="error">Please select a player icon</div>}
-          </div>
+              {/* Your token icon */}
+              <div className="lobby-input-group">
+                <label className="lobby-input-label">Your Icon</label>
+                <IconPicker players={state.players} myId={myId} />
+                {!me?.icon && <div className="error">Please select a player icon</div>}
+              </div>
 
-          {/* Your character */}
-          <div className="lobby-input-group">
-            <label className="lobby-input-label">Your Character</label>
-            <CharacterPicker players={state.players} myId={myId} characters={state.characters} abilities={state.abilities} />
-            {!me?.character && <div className="error">Please select a character</div>}
-          </div>
+              {/* Game rules panel */}
+              <RulesPanel rules={rules} isHost={isHost} />
 
-          {/* Game rules panel */}
-          <RulesPanel rules={rules} isHost={isHost} />
-
-          {/* Status / action */}
-          {isHost ? (
-            <>
-              {state.players.length < 2 && (
+              {/* Status / action */}
+              {isHost ? (
+                <>
+                  {state.players.length < 2 && (
+                    <div className="waitroom-waiting-pulse">
+                      <span className="waitroom-pulse-dot" />
+                      Waiting for another player to join…
+                    </div>
+                  )}
+                  {startError && <div className="error">{startError}</div>}
+                  <button
+                    className="lobby-btn-primary"
+                    disabled={state.players.length < 2}
+                    onClick={() => {
+                      setStartError("");
+                      socket.emit("startGame", (res) => {
+                        if (res?.error) setStartError(res.error);
+                      });
+                    }}
+                  >
+                    Start Game
+                  </button>
+                </>
+              ) : (
                 <div className="waitroom-waiting-pulse">
                   <span className="waitroom-pulse-dot" />
-                  Waiting for another player to join…
+                  Waiting for the host to start…
                 </div>
               )}
-              {startError && <div className="error">{startError}</div>}
-              <button
-                className="lobby-btn-primary"
-                disabled={state.players.length < 2}
-                onClick={() => {
-                  setStartError("");
-                  socket.emit("startGame", (res) => {
-                    if (res?.error) setStartError(res.error);
-                  });
-                }}
-              >
-                Start Game
-              </button>
-            </>
-          ) : (
-            <div className="waitroom-waiting-pulse">
-              <span className="waitroom-pulse-dot" />
-              Waiting for the host to start…
-            </div>
-          )}
 
-          <button className="lobby-btn-secondary" onClick={() => setConfirmingLeave(true)}>
-            Leave Room
-          </button>
+              <button className="lobby-btn-secondary" onClick={() => setConfirmingLeave(true)}>
+                Leave Room
+              </button>
+            </div>
+
+            {/* ── Right: character picker (needs the room to read) ── */}
+            <div className="characters-waitroom-right">
+              <label className="lobby-input-label">Your Character</label>
+              <CharacterPicker players={state.players} myId={myId} characters={state.characters} abilities={state.abilities} />
+              {!me?.character && <div className="error">Please select a character</div>}
+            </div>
+          </div>
 
           {confirmingLeave && (
             <ConfirmDialog

@@ -115,7 +115,7 @@ test("active: Copy Cat copies Y's Detonate, using SE's own targeting, and doesn'
   assert.equal(result.levelsRemoved, 5);
   assert.equal(room.ownership[10].houses, 0, "the hotel was fully wiped, exactly like a real Detonate");
   assert.equal(wreckerPlayer.abilityCooldown, 0, "Y's own cooldown is completely untouched -- copy, not steal");
-  assert.equal(fixerPlayer.abilityCooldown, 5 + Math.floor(9 / 2), "SE's own cooldown: 5 + half of Detonate's 9-turn cooldown, rounded down");
+  assert.equal(fixerPlayer.abilityCooldown, 5 + Math.floor(10 / 2), "SE's own cooldown: 5 + half of Detonate's 10-turn cooldown, rounded down");
 });
 
 test("active: Copy Cat copying Detonate onto an empty lot force-mortgages it too, no payout, same as a real Detonate", () => {
@@ -178,7 +178,7 @@ test("active: Copy Cat copying Wrecking Tour is rejected if SE (the actual caste
   assert.equal(fixerPlayer.abilityCooldown, 0, "a rejected copy arms no cooldown");
 });
 
-test("active: Copy Cat copying Barricade makes SE (the caster), not just D, immune to it", () => {
+test("active: Copy Cat copying Barricade means SE (the caster) can get trapped by it too, same as D would be", () => {
   const room = makeRoom(["Fixer", "Don", "Other"]);
   after(() => cleanup(room));
   const fixerPlayer = room.playerById("p0");
@@ -191,13 +191,8 @@ test("active: Copy Cat copying Barricade makes SE (the caster), not just D, immu
 
   fixerPlayer.position = 0;
   room.movePlayer(fixerPlayer, 10); // would normally land on tile 10
-  assert.equal(fixerPlayer.position, 10, "SE, as the actual caster, passes through freely");
-  assert.ok(room.barricade, "untouched -- SE's own crossing doesn't spring it");
-
-  const other = room.playerById("p2");
-  other.position = 0;
-  room.movePlayer(other, 10);
-  assert.equal(other.position, 4, "a real victim still gets stopped");
+  assert.equal(fixerPlayer.position, 4, "SE, as the actual caster, gets stopped by his own barricade");
+  assert.equal(room.barricade, null, "sprung and cleared by his own crossing");
 });
 
 test("active: Copy Cat rejects self-targeting", () => {
@@ -214,6 +209,23 @@ test("active: Copy Cat rejects a target with no character, and an invalid target
   room.playerById("p0").character = "SE";
   assert.equal(room.useAbility("p0", { copyFromId: "p1", params: {} }).error, "Target has no character");
   assert.equal(room.useAbility("p0", { copyFromId: "nope", params: {} }).error, "Invalid target");
+});
+
+test("active: Copy Cat can still copy a bankrupt or left player's character -- it only reads which ability they picked, never acts on them", () => {
+  const room = makeRoom(["Fixer", "BankruptDon", "LeftDon", "Victim"]);
+  after(() => cleanup(room));
+  room.playerById("p0").character = "SE";
+  room.playerById("p1").character = "D";
+  room.playerById("p1").bankrupt = true;
+  room.playerById("p2").character = "D";
+  room.playerById("p2").left = true;
+
+  const resultFromBankrupt = room.useAbility("p0", { copyFromId: "p1", params: { tileId: 4 } });
+  assert.equal(resultFromBankrupt.ok, true, "copying a bankrupt player's ability is allowed");
+
+  room.playerById("p0").abilityCooldown = 0; // reset for the second copy in this same test
+  const resultFromLeft = room.useAbility("p0", { copyFromId: "p2", params: { tileId: 8 } });
+  assert.equal(resultFromLeft.ok, true, "copying a left player's ability is allowed");
 });
 
 test("active: Copy Cat propagates a rejection from the copied ability itself (e.g. Detonate's own self-targeting rule)", () => {

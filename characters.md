@@ -45,9 +45,9 @@ yet exposed over a socket event or given a lobby UI.
   everyone after that (including that same player again) passes through
   freely. If nobody crosses it, it expires unused once D's own next turn
   comes around (not a global round boundary — see "Round scoping" below).
-- The caster is immune to their own barricade — D's movement (or SE's, if
-  copied via Copy Cat) crosses it freely without springing or consuming it;
-  the trap stays armed for the next actual victim.
+- The caster is NOT immune to their own barricade — D's movement (or SE's, if
+  copied via Copy Cat) can spring and get trapped by it, same as any other
+  player.
 - The barricade itself doesn't charge a toll; whatever the player owes is
   just whatever that tile would normally charge.
 
@@ -107,7 +107,7 @@ the table doesn't trade or get taxed.**
   - Two house levels: 6 turns
   - Three house levels: 7 turns
   - Four house levels: 8 turns
-  - Hotel (full level 5): 9 turns
+  - Hotel (full level 5): 10 turns
 
 ---
 
@@ -123,7 +123,7 @@ the table doesn't trade or get taxed.**
   bank-mediated same as D's turf cut — the payer pays normal rent, and the
   property owner's earnings are the ones reduced by 90%.
 
-**Active — Hostile Takeover, rechargeable, 7-turn static cooldown.**
+**Active — Hostile Takeover, rechargeable, 6-turn static cooldown.**
 
 - Takes control of any one tile until H's own next turn comes around (not a
   global round boundary — see "Round scoping" below), then it reverts.
@@ -147,10 +147,16 @@ the table doesn't trade or get taxed.**
 - Sends a bus around the board loop starting from SD's current position,
   demolishing **2 building levels** on every property tile it passes through
   (where applicable), continuing until it reaches tile 6 (the Coster
-  Station).
+  Station). Skips any property SD owns himself — the sweep still passes
+  over his own tiles, it just doesn't tear them down.
 - Can't be activated while the caster is in the Holding Pen (no bus to send
   out while jailed) — this also blocks SE from Copy Cat-ing Wrecking Tour
   while SE himself is jailed, even if the real SD is free.
+- Ignores barricades entirely — the tour computes its own path and jumps
+  straight to tile 6 rather than moving tile-by-tile through `movePlayer`
+  (the only place barricade interception happens), so a barricade anywhere
+  on the route neither stops the bus nor gets sprung/consumed by it.
+  Confirmed, not a bug — user's call.
 
 ---
 
