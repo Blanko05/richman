@@ -210,3 +210,29 @@ test("active: Hostile Takeover rejects a non-ownable tile", () => {
   const result = room.useAbility("p0", { tileId: 4 }); // a tax tile
   assert.equal(result.error, "Invalid target");
 });
+
+test("broadcast: seizing a tile bumps hostileTakeoverSeq/lastHostileTakeover for client animation, carrying the previous owner (or null for an unowned tile)", () => {
+  const room = makeRoom(["Kingpin", "Owner"]);
+  after(() => cleanup(room));
+  room.playerById("p0").character = "H";
+  ownTile(room, "p1", 1);
+
+  assert.equal(room.hostileTakeoverSeq, 0);
+  room.useAbility("p0", { tileId: 1 });
+  assert.equal(room.hostileTakeoverSeq, 1);
+  assert.deepEqual(room.lastHostileTakeover, { casterId: "p0", tileId: 1, previousOwnerId: "p1" });
+
+  const room2 = makeRoom(["Kingpin", "Other"]);
+  after(() => cleanup(room2));
+  room2.playerById("p0").character = "H";
+  room2.useAbility("p0", { tileId: 5 }); // unowned
+  assert.equal(room2.lastHostileTakeover.previousOwnerId, null);
+});
+
+test("broadcast: a rejected Hostile Takeover (invalid target, already controlled) doesn't bump hostileTakeoverSeq", () => {
+  const room = makeRoom(["Kingpin", "Other"]);
+  after(() => cleanup(room));
+  room.playerById("p0").character = "H";
+  room.useAbility("p0", { tileId: 4 }); // a tax tile -- rejected
+  assert.equal(room.hostileTakeoverSeq, 0);
+});

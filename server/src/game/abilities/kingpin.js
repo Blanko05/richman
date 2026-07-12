@@ -61,6 +61,12 @@ export const kingpin = {
     room.ownership[tileId] = current ? { ...current, ownerId: caster.id } : { ownerId: caster.id, houses: 0 };
     if (!caster.properties.includes(tileId)) caster.properties.push(tileId);
     room.pushLog(`${caster.name} seized control of ${tile.name} until their own next turn.`);
+    // Client-animation broadcast (abilities.md) -- cast and payoff are the
+    // same synchronous moment here (no targeting-then-later-resolution gap
+    // like Barricade/Curse), so one seq bump covers both, same pattern as
+    // Detonate's own single-event pair.
+    room.hostileTakeoverSeq = (room.hostileTakeoverSeq || 0) + 1;
+    room.lastHostileTakeover = { casterId: caster.id, tileId, previousOwnerId: current?.ownerId ?? null };
     return { ok: true, tileId };
   },
 };

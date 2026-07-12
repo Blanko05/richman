@@ -168,6 +168,19 @@ export class Room {
     // once the caster's own next turn comes around -- see the revert call in
     // endTurn. Caster-relative, not a global round boundary (decisions.md).
     this.hostileTakeover = null;
+    // Client-animation broadcast pair for Hostile Takeover's cast+payoff
+    // moment (abilities.md) -- like Detonate, not Barricade/Curse: seizing a
+    // tile happens in one synchronous call in kingpin.js's active(), so
+    // there's no real gap between "cast" and "payoff" to justify two
+    // separate pairs. The standing indicator itself needs no seq at all --
+    // it's read straight off this.hostileTakeover, same as barricade/
+    // activeCurses -- this pair exists only for the one-shot flash+sting the
+    // instant the seizure happens. previousOwnerId is carried separately
+    // from hostileTakeover.previousOwnership (which the client never reads)
+    // purely so a future payoff visual could distinguish "seized from
+    // another player" vs "seized an unowned tile" without re-deriving it.
+    this.hostileTakeoverSeq = 0;
+    this.lastHostileTakeover = null;
     // SD's Wrecking Tour (see abilities/conductor.js) -- bumped/set each use
     // so every client (not just the caster) can animate the bus travelling
     // startTileId -> path -> back, same "tell the client a special move just
@@ -1723,6 +1736,8 @@ export class Room {
       curseDrainSeq: this.curseDrainSeq,
       lastCurseDrain: this.lastCurseDrain,
       hostileTakeover: this.hostileTakeover,
+      hostileTakeoverSeq: this.hostileTakeoverSeq,
+      lastHostileTakeover: this.lastHostileTakeover,
       wreckingTourSeq: this.wreckingTourSeq,
       lastWreckingTour: this.lastWreckingTour,
       detonateSeq: this.detonateSeq,
@@ -1773,6 +1788,8 @@ export class Room {
       curseDrainSeq: this.curseDrainSeq,
       lastCurseDrain: this.lastCurseDrain,
       hostileTakeover: this.hostileTakeover,
+      hostileTakeoverSeq: this.hostileTakeoverSeq,
+      lastHostileTakeover: this.lastHostileTakeover,
       wreckingTourSeq: this.wreckingTourSeq,
       lastWreckingTour: this.lastWreckingTour,
       detonateSeq: this.detonateSeq,
@@ -1831,6 +1848,8 @@ export class Room {
     room.curseDrainSeq = snapshot.curseDrainSeq || 0;
     room.lastCurseDrain = snapshot.lastCurseDrain || null;
     room.hostileTakeover = snapshot.hostileTakeover || null;
+    room.hostileTakeoverSeq = snapshot.hostileTakeoverSeq || 0;
+    room.lastHostileTakeover = snapshot.lastHostileTakeover || null;
     room.wreckingTourSeq = snapshot.wreckingTourSeq || 0;
     room.lastWreckingTour = snapshot.lastWreckingTour || null;
     room.detonateSeq = snapshot.detonateSeq || 0;

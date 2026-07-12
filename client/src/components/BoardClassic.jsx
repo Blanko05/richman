@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { socket } from "../socket";
-import { playMoveSwoosh, playSellBuilding, playBarricadeThud, playCurseDrain, playExplosion, playSirenAlarm, primeAudio } from "../sfx";
+import { playMoveSwoosh, playSellBuilding, playBarricadeThud, playCurseDrain, playExplosion, playSirenAlarm, playHostileTakeover, playMotor, primeAudio } from "../sfx";
 import Dice from "./Dice";
 import PlayerToken from "./PlayerToken";
 import PropertyCardDetail from "./PropertyCardDetail";
@@ -57,6 +57,11 @@ reaperImg.src = "/reaper.png";
 // below) -- same reasoning as barrierImg/reaperImg above.
 const crossairImg = new Image();
 crossairImg.src = "/crossair.png";
+
+// H's Hostile Takeover standing indicator (see ClassicTile's `seized`
+// prop) -- same reasoning as barrierImg/reaperImg/crossairImg above.
+const crownImg = new Image();
+crownImg.src = "/crown.png";
 
 export function TreasureIcon() {
   return (
@@ -237,7 +242,7 @@ function HoldingCornerArt({ name, visitingLabel }) {
   );
 }
 
-function ClassicTile({ tile, owned, players, sideLen, onSelect, isSelected, targeting, barricaded, barricadeCasting, detonateGlow, detonateReticle, detonateBlast }) {
+function ClassicTile({ tile, owned, players, sideLen, onSelect, isSelected, targeting, barricaded, barricadeCasting, detonateGlow, detonateReticle, detonateBlast, seized, takeoverDrop, takeoverLand, takeoverColorPending, takeoverPrevOwnerId, takeoverRecolor, demolishPendingLevels }) {
   const { id, name, price, amount, groupColor, type, visitingLabel } = tile;
   const { edge, row, col } = getLayout(id, sideLen);
   const hasIcon = type === "treasure" || type === "surprise" || type === "tax" || type === "transit" || type === "rest" || type in CORNER_ICON_SRC;
@@ -246,8 +251,16 @@ function ClassicTile({ tile, owned, players, sideLen, onSelect, isSelected, targ
   const isCorner = edge === "corner";
   // Mortgaged tiles go dull grey regardless of owner, so the board reads
   // "not earning rent" at a glance instead of still flashing the owner color.
-  const ownerColor = owned?.ownerId
-    ? (owned.mortgaged ? "#5a5a5a" : players.find((p) => p.id === owned.ownerId)?.color)
+  // H's Hostile Takeover: while takeoverColorPending is true for this tile,
+  // deliberately show the PREVIOUS owner's color (or none) instead of the
+  // real one -- kingpin.js's active() has already flipped owned.ownerId by
+  // the time this broadcast lands (synchronous, like Detonate), but the
+  // recolor is meant to read as a gradual reveal timed to the crown's
+  // landing (see BoardClassic.jsx's hostileTakeoverSeq effect), not an
+  // instant snap the same frame the crown starts dropping.
+  const displayOwnerId = takeoverColorPending ? takeoverPrevOwnerId : owned?.ownerId;
+  const ownerColor = displayOwnerId
+    ? (owned?.mortgaged ? "#5a5a5a" : players.find((p) => p.id === displayOwnerId)?.color)
     : null;
   // While an ability's tile-targeting is active (App.jsx's shared targeting
   // state machine), every tile becomes clickable -- e.g. Barricade can target
@@ -256,12 +269,19 @@ function ClassicTile({ tile, owned, players, sideLen, onSelect, isSelected, targ
   const isClickable = CLICKABLE_TYPES.includes(type) || targeting;
 
   const badgeValue = price != null ? price : amount;
-  const houses = owned?.houses || 0;
+  // SD's Wrecking Tour: demolishPendingLevels adds back whatever this tile
+  // is about to lose while it's still waiting on the bus's own visual
+  // arrival (see BoardClassic.jsx's pendingDemolish) -- owned.houses has
+  // already been reduced server-side by the time this broadcast lands
+  // (synchronous, same as Detonate/Hostile Takeover), so without this the
+  // badge would drop instantly for every flattened tile on the whole
+  // route, not just the one the bus is actually at yet.
+  const houses = (owned?.houses || 0) + (demolishPendingLevels || 0);
   const isHotel = houses >= 5;
 
   return (
     <div
-      className={`cv2-tile ${isCorner ? "cv2-corner" : `cv2-side-${edge}`}${type === "transit" ? " cv2-transit" : ""}${type === "rest" ? " cv2-rest" : ""}${isClickable ? " cv2-tile-clickable" : ""}${isSelected ? " cv2-tile-selected" : ""}${targeting ? " cv2-tile-targetable" : ""}${barricadeCasting ? " cv2-tile--barricade-slam" : ""}${detonateGlow ? " cv2-tile--detonate-glow" : ""}${detonateBlast ? " cv2-tile--detonate-blast" : ""}`}
+      className={`cv2-tile ${isCorner ? "cv2-corner" : `cv2-side-${edge}`}${type === "transit" ? " cv2-transit" : ""}${type === "rest" ? " cv2-rest" : ""}${isClickable ? " cv2-tile-clickable" : ""}${isSelected ? " cv2-tile-selected" : ""}${targeting ? " cv2-tile-targetable" : ""}${barricadeCasting ? " cv2-tile--barricade-slam" : ""}${detonateGlow ? " cv2-tile--detonate-glow" : ""}${detonateBlast ? " cv2-tile--detonate-blast" : ""}${takeoverLand ? " cv2-tile--takeover-flash" : ""}${takeoverRecolor ? " cv2-tile--takeover-recolor" : ""}`}
       style={{ gridRow: row, gridColumn: col, ...(!isCorner && ownerColor ? { background: ownerColor } : {}) }}
       onClick={isClickable ? (e) => onSelect(id, e.currentTarget, edge) : undefined}
     >
@@ -272,20 +292,21 @@ function ClassicTile({ tile, owned, players, sideLen, onSelect, isSelected, targ
         </div>
       )}
 
-      {/* Keyed on mortgaged/houses/barricaded/detonating -- all are purely
-          cosmetic sibling changes elsewhere in this tile (the band
+      {/* Keyed on mortgaged/houses/barricaded/detonating/seized -- all are
+          purely cosmetic sibling changes elsewhere in this tile (the band
           appearing/disappearing, the building badge appearing/
-          disappearing, the barricade icon and Detonate's reticle/burst/
-          crumble overlays below appearing/disappearing) that don't touch
-          cv2-body's own box model at all, yet reliably left its rotated/
-          vertical-writing-mode text visually "stuck" mid-tile until a full
-          page reload recomputed it (a Chromium layout-cache bug, not
-          anything wrong in this CSS) -- barricaded/detonating were added
-          to this key for the same reason mortgaged/houses are here: it's
-          the same bug, a new trigger each time. Forcing React to unmount/
-          remount this node instead of patching it in place sidesteps the
-          stale layout entirely -- same effect a refresh has, without one. */}
-      <div key={`${!!owned?.mortgaged}-${houses}-${barricaded}-${!!detonateReticle}-${!!detonateBlast}`} className={`cv2-body${hasIcon ? " cv2-body--icon" : ""}`}>
+          disappearing, the barricade icon, Detonate's reticle/burst/
+          crumble overlays, and Hostile Takeover's crown icon below
+          appearing/disappearing) that don't touch cv2-body's own box model
+          at all, yet reliably left its rotated/vertical-writing-mode text
+          visually "stuck" mid-tile until a full page reload recomputed it
+          (a Chromium layout-cache bug, not anything wrong in this CSS) --
+          barricaded/detonating/seized were added to this key for the same
+          reason mortgaged/houses are here: it's the same bug, a new
+          trigger each time. Forcing React to unmount/remount this node
+          instead of patching it in place sidesteps the stale layout
+          entirely -- same effect a refresh has, without one. */}
+      <div key={`${!!owned?.mortgaged}-${houses}-${barricaded}-${!!detonateReticle}-${!!detonateBlast}-${!!seized}`} className={`cv2-body${hasIcon ? " cv2-body--icon" : ""}`}>
         {type === "transit" ? (
           <div className="cv2-transit-layout">
             <span className="cv2-transit-name">{nameParts[0]}</span>
@@ -350,6 +371,28 @@ function ClassicTile({ tile, owned, players, sideLen, onSelect, isSelected, targ
         <img src="/barrier.png" className="cv2-barricade-icon" alt="" />
       )}
 
+      {/* Standing indicator: H's Hostile Takeover (see Room.js's
+          this.hostileTakeover), same "driven straight off room state, no
+          seq needed" reasoning as barricaded above. The tile's own
+          recoloring to H's color already happens for free via ownerColor
+          (owned.ownerId flips to H's id the instant the ability resolves,
+          kingpin.js's active()) -- this icon exists purely so a seized
+          tile still reads as "seized," not just "H bought this normally,"
+          since the recolor alone looks identical to either case.
+          takeoverDrop/takeoverLand layer the one-shot arrival animation on
+          top of the idle pulse (--drop and --land add a second, transform-
+          only animation alongside cv2-takeover-icon's own filter-only idle
+          pulse -- different CSS properties, so they run concurrently
+          without clobbering each other, same trick barricade-icon's
+          left/right rotation uses relative to its idle pulse). */}
+      {seized && (
+        <img
+          src="/crown.png"
+          className={`cv2-takeover-icon${takeoverDrop ? " cv2-takeover-icon--drop" : ""}${takeoverLand ? " cv2-takeover-icon--land" : ""}`}
+          alt=""
+        />
+      )}
+
       {/* Y's Detonate -- cast+payoff, one combined broadcast event (see
           Room.js's detonateSeq comment: unlike Barricade/Curse there's no
           real gap in time between targeting and resolution, so
@@ -391,7 +434,7 @@ function ClassicTile({ tile, owned, players, sideLen, onSelect, isSelected, targ
 // player always has exactly one current tile, in flight or not, so
 // stacking (stackIndex/stackTotal) works the same way whether a token is
 // sitting still or mid-glide through the tile it's passing.
-function TokenLayer({ players, sideLen, trackCenters, cellPct, holdingTileId, currentPlayerId, visualPositions, floatingIds, landingIds, celebratingIds, busRidingId, barricadeSnapId, activeCurses, curseDrainTargetId }) {
+function TokenLayer({ players, sideLen, trackCenters, cellPct, holdingTileId, currentPlayerId, visualPositions, floatingIds, landingIds, celebratingIds, busRidingId, busDustId, barricadeSnapId, activeCurses, curseDrainTargetId }) {
   // The Holding tile splits into two sub-zones -- everywhere else, all
   // occupants of a tile still share one shared "main" stack exactly as
   // before.
@@ -438,6 +481,7 @@ function TokenLayer({ players, sideLen, trackCenters, cellPct, holdingTileId, cu
             justBought={celebratingIds.has(p.id)}
             isActiveTurn={p.id === currentPlayerId}
             isBusRiding={busRidingId === p.id}
+            isBusDust={busDustId === p.id}
             isBarricadeSnap={barricadeSnapId === p.id}
             isCursed={activeCurses.some((c) => c.targetId === p.id)}
             isCurseDraining={curseDrainTargetId === p.id}
@@ -506,7 +550,7 @@ function DetonateCrosshairIcon({ pos, sideLen, trackCenters }) {
 }
 
 export default function BoardClassic({ state, myId, tokenMoving, onTokenMovingChange, tileTargeting, onTileTarget }) {
-  const { board, ownership, players, lastRoll, turnIndex, rollSeq, jailSeq, jailedPlayerId, jailFromTileId, wreckingTourSeq, lastWreckingTour, barricade, barricadeSeq, lastBarricadeStop, activeCurses, curseCastSeq, lastCurseCast, curseDrainSeq, lastCurseDrain, detonateSeq, lastDetonate } = state;
+  const { board, ownership, players, lastRoll, turnIndex, rollSeq, jailSeq, jailedPlayerId, jailFromTileId, wreckingTourSeq, lastWreckingTour, barricade, barricadeSeq, lastBarricadeStop, activeCurses, curseCastSeq, lastCurseCast, curseDrainSeq, lastCurseDrain, detonateSeq, lastDetonate, hostileTakeover, hostileTakeoverSeq, lastHostileTakeover } = state;
 
   // Rim tracks (row 1 / row N / col 1 / col N) are wider than inner tracks so
   // tiles take up more of the board and the center shrinks. Tiles become
@@ -706,15 +750,36 @@ export default function BoardClassic({ state, myId, tokenMoving, onTokenMovingCh
   const [movingIds, setMovingIds] = useState(() => new Set());
   const [celebratingIds, setCelebratingIds] = useState(() => new Set());
   // SD's (or a Copy-Catting SE's) token during a Wrecking Tour glide --
-  // swapped out for a bus in place of the rider's own icon while it plays.
-  // Set explicitly wherever a tour-caused glide is kicked off (both the
-  // generic move effect and the full-lap edge case further down), then
-  // clears itself the moment that rider actually stops moving, rather than
-  // needing a completion callback threaded through stepTokenAlongLegs.
+  // swapped out for a bus (icon + blue engine glow, see PlayerToken.jsx)
+  // in place of the rider's own icon for the WHOLE sequence, starting the
+  // instant the ability fires -- not just once the token actually starts
+  // moving (see the dedicated wreckingTourSeq effect further down: there's
+  // now a deliberate pre-departure pause where the bus sits revving before
+  // it sets off). Clears itself the moment that rider actually stops
+  // moving, rather than needing a completion callback threaded through
+  // stepTokenAlongLegs.
   const [busRidingId, setBusRidingId] = useState(null);
   useEffect(() => {
     if (busRidingId && !movingIds.has(busRidingId)) setBusRidingId(null);
   }, [movingIds, busRidingId]);
+  // Dust trail (PlayerToken.jsx) -- unlike busRidingId above, this is only
+  // true once the bus is ACTUALLY gliding (after the pre-departure pause),
+  // not during the stationary revving window -- nothing's kicking up dust
+  // while parked. Set/cleared explicitly by the wreckingTourSeq effect
+  // around its own stepTokenAlongLegs call.
+  const [busDustId, setBusDustId] = useState(null);
+  // Wrecking Tour: which demolished tiles haven't had the bus visually
+  // reach them yet, tileId -> levelsRemoved. kingpin.js-style broadcasts
+  // (Detonate, Hostile Takeover) resolve synchronously, so the real
+  // owned.houses reduction has already happened server-side by the time
+  // this broadcast lands -- without this, EVERY flattened tile along the
+  // whole route would visually lose its houses in the same instant the
+  // tour starts, regardless of where the bus actually is yet. ClassicTile
+  // adds this back onto the live houses count while a tile's own entry is
+  // still here (see its `demolishPendingLevels` prop), so each tile only
+  // visually crumbles once the bus's own visualPositions entry actually
+  // reaches it.
+  const [pendingDemolish, setPendingDemolish] = useState(() => new Map());
   // D's Barricade: cast-moment tile id (drives the slam+dust+dim effects,
   // see the prevBarricadeRef effect further down), whole-board shake flag
   // and the payoff's snapped-token id (both driven from inside the generic
@@ -762,6 +827,35 @@ export default function BoardClassic({ state, myId, tokenMoving, onTokenMovingCh
   // visualPositions (which is keyed per-player) since this icon isn't
   // attached to any player's token.
   const [detonateCrosshairPos, setDetonateCrosshairPos] = useState(null);
+  // H's Hostile Takeover: cast+payoff, same single-event shape as Detonate
+  // (kingpin.js resolves the seizure synchronously, no separate targeting
+  // step), sequenced locally into a drop-then-land beat off the one
+  // hostileTakeoverSeq bump (see that effect further down for the full
+  // phase breakdown):
+  //   1. Drop (DROP_MS): the crown scales in from oversized/faded down to
+  //      its resting size, timed to land exactly as the sting's own
+  //      impact hits. The tile's real owner-color change (already applied
+  //      server-side by the time this broadcast lands) is intentionally
+  //      SUPPRESSED during this phase -- takeoverPending holds the
+  //      previous owner's id so the tile keeps showing its old color
+  //      until the crown actually lands, instead of snapping the instant
+  //      the seq bumps.
+  //   2. Land (LAND_MS): the crown gets its own settle-shake, the board
+  //      gets the shared boardShaking jolt (reused from Barricade/
+  //      Detonate, same visual effect), and the tile gets a brief red
+  //      impact wash -- all three fire together as one "it just landed"
+  //      beat.
+  //   3. Recolor (RECOLOR_MS, starts at the same instant as Land): pending
+  //      suppression lifts and the tile's real owner color is revealed,
+  //      but with a transition class active (cv2-tile--takeover-recolor)
+  //      so the color change reads as a gradual reveal timed to the
+  //      landing, not an instant snap -- the class is removed once the
+  //      transition's own duration elapses so unrelated later color
+  //      changes (mortgaging, a future seizure) stay instant snaps again.
+  const [takeoverDropTileId, setTakeoverDropTileId] = useState(null);
+  const [takeoverLandTileId, setTakeoverLandTileId] = useState(null);
+  const [takeoverPending, setTakeoverPending] = useState(null); // { tileId, prevOwnerId }
+  const [takeoverRecolorTileId, setTakeoverRecolorTileId] = useState(null);
   const prevPositionsRef = useRef(new Map(players.map((p) => [p.id, p.position])));
   const prevRollSeqRef = useRef(rollSeq);
   const prevJailSeqRef = useRef(jailSeq);
@@ -906,7 +1000,9 @@ export default function BoardClassic({ state, myId, tokenMoving, onTokenMovingCh
   // Independent from the Wrecking Tour effect's own prevWreckingTourSeqRef
   // (further down) -- both effects react to the same wreckingTourSeq bump in
   // the same commit, so sharing one ref would let whichever effect runs
-  // first silently consume the change before the other ever sees it.
+  // first silently consume the change before the other ever sees it. Used
+  // here only to recognize (and then exclude) the tour caster's own move
+  // from this effect's generic handling -- see genericMoves below.
   const prevTourSeqForBusRef = useRef(wreckingTourSeq);
   // D's Barricade payoff: the shake/thud/snap need to land when the token
   // VISUALLY arrives at the barricaded tile, not the instant the broadcast
@@ -943,6 +1039,14 @@ export default function BoardClassic({ state, myId, tokenMoving, onTokenMovingCh
       if (prev !== undefined && prev !== p.position) moves.push({ id: p.id, from: prev, to: p.position });
       prevPositions.set(p.id, p.position);
     });
+    // Wrecking Tour: the caster's own move this same broadcast is entirely
+    // owned by the dedicated wreckingTourSeq effect below now (pre-
+    // departure pause, half-speed glide, per-tile demolish sync) --
+    // excluded here so this generic effect doesn't ALSO drive a second,
+    // conflicting glide for the same token. Still recorded in
+    // prevPositions above like any other move, just not acted on here.
+    const tourCasterId = tourJustHappened ? lastWreckingTour?.casterId : null;
+    const genericMoves = moves.filter((m) => m.id !== tourCasterId);
 
     const prevPropCounts = prevPropCountsRef.current;
     const boughtIds = [];
@@ -954,20 +1058,19 @@ export default function BoardClassic({ state, myId, tokenMoving, onTokenMovingCh
 
     const timers = [];
 
-    if (moves.length) {
-      setMovingIds((s) => new Set([...s, ...moves.map((m) => m.id)]));
+    if (genericMoves.length) {
+      setMovingIds((s) => new Set([...s, ...genericMoves.map((m) => m.id)]));
       const startDelay = rollJustHappened ? 1000 : 0;
       // Sound-only, so it's fine for this one to still ride the shared
       // per-run `timers` array -- losing a swoosh to an unlucky re-render is
       // harmless, unlike losing a movingIds cleanup.
       timers.push(setTimeout(() => playMoveSwoosh(), startDelay));
-      moves.forEach(({ id, from, to }) => {
+      genericMoves.forEach(({ id, from, to }) => {
         const isJailTeleport = jailJustHappened && id === jailedPlayerId;
         const isBackwardCardMove = !isJailTeleport && backwardMoverId === id;
         const legs = buildResolvedLegs({
           from, to, isJailTeleport, jailFromDestination: jailFromTileId, backward: isBackwardCardMove,
         });
-        if (tourJustHappened && lastWreckingTour?.casterId === id) setBusRidingId(id);
         // Fires once the glide this same move just kicked off actually
         // finishes -- summing every leg's own glideMs (plus any
         // pauseBeforeMs, though a barricade stop is never a jail teleport
@@ -998,59 +1101,103 @@ export default function BoardClassic({ state, myId, tokenMoving, onTokenMovingCh
     return () => timers.forEach(clearTimeout);
   }, [players, rollSeq, jailSeq, jailedPlayerId, jailFromTileId, state.pendingAction, board.length, sideLen, trackCenters, wreckingTourSeq, lastWreckingTour, barricadeSeq, lastBarricadeStop]);
 
-  // SD's Wrecking Tour (decisions.md): player.position now genuinely changes
-  // to the tour's destination (see conductor.js), so the generic move-
-  // detection effect above already animates SD's token gliding there same as
-  // any other move -- EXCEPT when SD starts the tour already sitting on tile
-  // 6 (the destination): the tour is then a near-full lap all the way back
-  // to the same tile, so position ends up unchanged and that effect's
-  // prev-vs-current diff never sees a move to animate. Handled below by
-  // driving the glide manually for that one case, using the exact path the
-  // server already computed (also fixes the demolish-sound timing for the
-  // same case -- it used to be derived from a fresh from/to walk that
-  // degenerates to zero legs whenever from === to, same root cause).
+  // SD's Wrecking Tour: this effect now drives the ENTIRE sequence itself,
+  // for every tour (not just the old same-start/destination edge case --
+  // the generic move-detection effect above explicitly excludes the tour
+  // caster's own move now, see genericMoves there, so there's no more
+  // "which effect owns this move" split to worry about). User's own
+  // explicit spec for this pass (abilities.md): bus icon + blue engine
+  // glow the instant the ability fires, a 1.5s pre-departure pause with
+  // the motor revving before the bus actually sets off, half the normal
+  // glide speed once it does, an exaggerated dust trail while actually
+  // moving (not during the parked pause), and each demolished tile's own
+  // building count only dropping client-side once the bus visually
+  // reaches that specific tile.
   const prevWreckingTourSeqRef = useRef(wreckingTourSeq);
   useEffect(() => {
     if (wreckingTourSeq === prevWreckingTourSeqRef.current) return;
     prevWreckingTourSeqRef.current = wreckingTourSeq;
     const tour = lastWreckingTour;
     if (!tour) return;
-    const { casterId, startTileId, path, demolished } = tour;
-    const destinationTileId = path[path.length - 1];
-    const timers = [];
+    const { casterId, path, demolished } = tour;
+
+    // Applied AFTER the usual min/max clamp (not before) so both a short
+    // one-tile leg and a long straight run stay proportionally slower,
+    // not just re-clamped back into the same window.
+    const DEPARTURE_DELAY_MS = 1500;
+    const SPEED_MULTIPLIER = 2;
     const legs = groupPathIntoLegs(path, sideLen).map((leg, i, arr) => ({
       ...leg,
-      glideMs: Math.min(LEG_MAX_MS, Math.max(LEG_MIN_MS, leg.tileCount * MS_PER_TILE)),
+      glideMs: Math.min(LEG_MAX_MS, Math.max(LEG_MIN_MS, leg.tileCount * MS_PER_TILE)) * SPEED_MULTIPLIER,
       glideEase: legEasing(i, arr.length),
     }));
 
-    if (startTileId === destinationTileId) {
-      setMovingIds((s) => new Set(s).add(casterId));
-      setBusRidingId(casterId);
-      stepTokenAlongLegs(casterId, legs);
-    }
+    // Bus icon + blue engine glow (PlayerToken.jsx's isBusRiding) and the
+    // movingIds lock both start immediately, before the departure pause
+    // even begins -- the whole sequence, parked or gliding, is "SD is
+    // mid-ability," so End Turn stays blocked for its full duration, not
+    // just the glide portion.
+    setMovingIds((s) => new Set(s).add(casterId));
+    setBusRidingId(casterId);
+    playMotor();
+
+    // Every demolished tile is suppressed from the very first render after
+    // this broadcast lands -- the server has already reduced owned.houses
+    // for ALL of them by now (resolved synchronously, same as Detonate/
+    // Hostile Takeover), so without this every flattened tile along the
+    // whole route would lose its houses in the same instant, regardless of
+    // where the bus actually is yet. Each entry is removed individually
+    // (see the per-tile timer below), revealing that tile's real, lower
+    // count right as the bus's own glide reaches it.
+    setPendingDemolish(new Map(demolished.map((d) => [d.tileId, d.levelsRemoved])));
+
+    const timers = [];
 
     // Demolished tiles don't line up with leg boundaries (a leg can span
     // several tiles at once), so this estimates each one's arrival time
-    // proportionally within its leg -- close enough to play the sound
-    // roughly as the bus reaches that tile, without needing tile-by-tile
-    // glide steps.
-    if (demolished.length) {
-      let elapsedMs = 0;
-      const arrivalDelayByPathIndex = [];
-      legs.forEach((leg) => {
-        const perTileMs = leg.glideMs / leg.tileCount;
-        for (let t = 0; t < leg.tileCount; t++) {
-          elapsedMs += perTileMs;
-          arrivalDelayByPathIndex.push(elapsedMs);
-        }
-      });
-      demolished.forEach(({ tileId }) => {
-        const pathIndex = path.indexOf(tileId);
-        const delay = pathIndex >= 0 ? arrivalDelayByPathIndex[pathIndex] : null;
-        if (delay != null) timers.push(setTimeout(() => playSellBuilding(), delay));
-      });
-    }
+    // proportionally within its leg -- close enough to sync the crumble
+    // reveal (and its sound) to roughly when the bus reaches that tile,
+    // without needing tile-by-tile glide steps of its own. Offset by
+    // DEPARTURE_DELAY_MS since these are timed from the broadcast landing,
+    // same as the glide itself.
+    let elapsedMs = 0;
+    const arrivalDelayByPathIndex = [];
+    legs.forEach((leg) => {
+      const perTileMs = leg.glideMs / leg.tileCount;
+      for (let t = 0; t < leg.tileCount; t++) {
+        elapsedMs += perTileMs;
+        arrivalDelayByPathIndex.push(elapsedMs);
+      }
+    });
+    demolished.forEach(({ tileId }) => {
+      const pathIndex = path.indexOf(tileId);
+      const delay = pathIndex >= 0 ? arrivalDelayByPathIndex[pathIndex] : null;
+      if (delay == null) return;
+      timers.push(setTimeout(() => {
+        playSellBuilding();
+        setPendingDemolish((m) => {
+          if (!m.has(tileId)) return m;
+          const next = new Map(m);
+          next.delete(tileId);
+          return next;
+        });
+      }, DEPARTURE_DELAY_MS + delay));
+    });
+
+    // The glide itself only actually starts once the pre-departure pause
+    // elapses -- dust turns on at the exact same instant, since nothing's
+    // kicking dust up while the bus is still parked and revving.
+    timers.push(setTimeout(() => {
+      setBusDustId(casterId);
+      stepTokenAlongLegs(casterId, legs);
+    }, DEPARTURE_DELAY_MS));
+
+    // Stops at the end of the glide itself, not the brief landing
+    // bounce/settle after it (LANDING_MS) -- the bus has already stopped
+    // translating by then, so trailing dust past that point would read as
+    // dust with nothing moving to kick it up.
+    const totalGlideMs = legs.reduce((sum, leg) => sum + leg.glideMs, 0);
+    timers.push(setTimeout(() => setBusDustId(null), DEPARTURE_DELAY_MS + totalGlideMs));
 
     return () => timers.forEach(clearTimeout);
   }, [wreckingTourSeq, lastWreckingTour, board.length, sideLen]);
@@ -1254,6 +1401,49 @@ export default function BoardClassic({ state, myId, tokenMoving, onTokenMovingCh
     // once, not a value this effect should ever react to changing.
   }, [detonateSeq, lastDetonate, board.length]);
 
+  // H's Hostile Takeover -- cast+payoff, one seq bump (see Room.js's
+  // hostileTakeoverSeq comment: same single-synchronous-event shape as
+  // Detonate), sequenced locally into drop-then-land phases -- see the
+  // state declarations above for the full phase breakdown. The standing
+  // crown icon (ClassicTile's `seized` prop) itself needs no timing of
+  // its own beyond these two phases -- it's driven straight off
+  // room.hostileTakeover for as long as the seizure lasts.
+  const prevHostileTakeoverSeqRef = useRef(hostileTakeoverSeq);
+  useEffect(() => {
+    if (hostileTakeoverSeq === prevHostileTakeoverSeqRef.current) return;
+    prevHostileTakeoverSeqRef.current = hostileTakeoverSeq;
+    if (!lastHostileTakeover) return;
+    const { tileId, previousOwnerId } = lastHostileTakeover;
+    // Tuned against takeover.mp3's own impact beat -- if the sting's
+    // "landing" moment doesn't line up with the crown's own landing once
+    // this actually plays, adjust DROP_MS to match rather than the
+    // animation timings below. Must stay equal to cv2-takeover-drop's own
+    // animation-duration in classicVintage.css (.cv2-takeover-icon--drop)
+    // -- this timer is what ends the drop phase and starts land/recolor,
+    // so if the two drift apart the crown either finishes scaling in and
+    // sits idle for a beat before landing, or gets cut off mid-animation.
+    const DROP_MS = 900;
+    const LAND_MS = 400;
+    const RECOLOR_MS = 550;
+
+    playHostileTakeover();
+    setTakeoverDropTileId(tileId);
+    setTakeoverPending({ tileId, prevOwnerId: previousOwnerId });
+
+    const timers = [];
+    timers.push(setTimeout(() => {
+      setTakeoverDropTileId(null);
+      setTakeoverLandTileId(tileId);
+      setTakeoverPending(null);
+      setTakeoverRecolorTileId(tileId);
+      setBoardShaking(true);
+    }, DROP_MS));
+    timers.push(setTimeout(() => setBoardShaking(false), DROP_MS + LAND_MS));
+    timers.push(setTimeout(() => setTakeoverLandTileId(null), DROP_MS + LAND_MS));
+    timers.push(setTimeout(() => setTakeoverRecolorTileId(null), DROP_MS + RECOLOR_MS));
+    return () => timers.forEach(clearTimeout);
+  }, [hostileTakeoverSeq, lastHostileTakeover]);
+
   // Tracks whether the dice's own jump/spin animation (1s, see dice.css
   // `d3-jump`) is still playing for the roll that just happened, so the
   // center action button doesn't swap to "End Turn" out from under the dice
@@ -1329,6 +1519,13 @@ export default function BoardClassic({ state, myId, tokenMoving, onTokenMovingCh
             detonateGlow={detonateGlowTileId === tile.id}
             detonateReticle={detonateReticleTileId === tile.id}
             detonateBlast={detonateBlast?.tileId === tile.id ? detonateBlast : null}
+            seized={hostileTakeover?.tileId === tile.id}
+            takeoverDrop={takeoverDropTileId === tile.id}
+            takeoverLand={takeoverLandTileId === tile.id}
+            takeoverColorPending={takeoverPending?.tileId === tile.id}
+            takeoverPrevOwnerId={takeoverPending?.tileId === tile.id ? takeoverPending.prevOwnerId : undefined}
+            takeoverRecolor={takeoverRecolorTileId === tile.id}
+            demolishPendingLevels={pendingDemolish.get(tile.id)}
           />
         ))}
 
@@ -1352,6 +1549,7 @@ export default function BoardClassic({ state, myId, tokenMoving, onTokenMovingCh
           landingIds={landingIds}
           celebratingIds={celebratingIds}
           busRidingId={busRidingId}
+          busDustId={busDustId}
           barricadeSnapId={barricadeSnapId}
           activeCurses={activeCurses}
           curseDrainTargetId={curseDrainTargetId}

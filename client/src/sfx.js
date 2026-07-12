@@ -116,6 +116,18 @@ export const playBarricadeThud  = makeClipPlayer("/sounds/thud.mp3", 0.9);
 // simple oscillator can't cheaply fake, unlike Curse's tone-based drain.
 export const playExplosion      = makeClipPlayer("/sounds/boom.mp3", 1);
 
+// H's Hostile Takeover cast+payoff -- the seizure sting the instant a tile
+// flips (hostileTakeoverSeq/lastHostileTakeover, see Room.js/kingpin.js).
+// User's call to supply a recorded clip, same reasoning as Detonate's boom.
+export const playHostileTakeover = makeClipPlayer("/sounds/takeover.mp3", 0.9);
+
+// SD's Wrecking Tour departure -- the bus revving up during the pre-glide
+// pause (wreckingTourSeq/lastWreckingTour, see BoardClassic.jsx's dedicated
+// effect), replacing the plain move-swoosh every other move uses. Also
+// closes out the "punchier departure sound" item from abilities.md's
+// brainstorm table.
+export const playMotor           = makeClipPlayer("/sounds/motor.mp3", 0.9);
+
 // Y's Detonate cast -- the alarm-siren wail that opens the whole sequence,
 // before the reticle/blast even start (user's idea, meant to make Detonate
 // read as a real showpiece). siren.mp3 is a long air-raid-style loop

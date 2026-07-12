@@ -9,6 +9,269 @@ in the same pass.
 
 ---
 
+## Pass 57 — 2026-07-12 — Wrecking Tour full polish pass: blue engine glow, revving pause, half-speed dust-trailing glide, and demolish-sync; Copy Cat skipped
+
+**Goal:** user's own explicit 5-point spec, and an explicit decision to
+skip Copy Cat entirely rather than build it — updated `abilities.md`'s
+status table/brainstorm table to reflect both (Wrecking Tour now Done,
+Copy Cat marked Skipped/struck through, not a remaining to-do).
+
+**What was done (assets):** user supplied `motor.mp3` at the repo root;
+copied into `client/public/sounds/motor.mp3` per the established
+convention.
+
+**Architectural change first:** the dedicated `wreckingTourSeq` effect in
+`BoardClassic.jsx` used to only drive the glide itself for ONE edge case
+(SD starting the tour already on tile 6, a near-full-lap move the generic
+move-detection effect can't see — Pass 47/49); every other tour was
+driven by that generic effect instead, same as an ordinary move. Getting
+precise control over departure timing, half-speed, and per-tile demolish
+sync meant this split had to go — the dedicated effect now owns the
+ENTIRE sequence for every tour, always. The generic move-detection effect
+was updated to explicitly exclude the tour caster's own move
+(`genericMoves`, filtered out via `tourCasterId`) so the two effects never
+fight over the same token's glide.
+
+**What was done (the 5 points, all client-side — `demolished`/`path`
+were already broadcast, no new server fields needed):**
+1. **Bus icon + blue engine glow**: `isBusRiding` already swapped the icon
+   (pre-existing); added `cv2-token--bus-glow`, a new fixed-blue glow
+   keyframe (not the rider's own player color) applied whenever riding.
+   Declared after `.cv2-token--active`'s own glow rule in
+   `classicVintage.css` (same specificity, so source order decides) so it
+   wins over the ordinary per-turn gold glow, which is almost always also
+   active during a ride.
+2. **Motor sound + 1.5s pre-departure pause**: `playMotor()` fires the
+   instant the ability resolves; the actual glide (`stepTokenAlongLegs`)
+   is held behind a `DEPARTURE_DELAY_MS = 1500` timer. `busRidingId` and
+   the `movingIds` lock both still start immediately (parked or gliding,
+   SD is mid-ability the whole time, so End Turn stays blocked
+   throughout) — only the glide itself waits.
+3. **Dust trail**: `cv2-token-dust`, 5 small puffs staggered via `--i`
+   (same per-icon stagger technique Detonate's crumbling icons use),
+   rendered in `PlayerToken.jsx` before `.cv2-token-inner` in the DOM so
+   plain paint order puts them behind the bus face — no z-index needed.
+   Gated on a new `busDustId` state, set only once the departure pause
+   elapses (not during the parked revving window) and cleared at the end
+   of the glide itself (not the trailing landing bounce — the bus has
+   already stopped translating by then).
+4. **Half speed**: every leg's `glideMs` doubled (`SPEED_MULTIPLIER = 2`),
+   applied AFTER the usual min/max clamp so both short and long legs stay
+   proportionally slower, not just re-clamped back into the same window.
+5. **Per-tile demolish sync**: new `pendingDemolish` state (`Map<tileId,
+   levelsRemoved>`), seeded with every demolished tile the instant the
+   broadcast lands (the server has already reduced `owned.houses` for ALL
+   of them by then, synchronous like Detonate/Hostile Takeover) and drained
+   one entry at a time as the bus's own estimated arrival at each tile is
+   reached. `ClassicTile`'s new `demolishPendingLevels` prop adds the
+   pending amount back onto the live house count while an entry is still
+   present, so a tile's badge only actually drops once the bus visually
+   gets there — previously every flattened tile on the whole route lost
+   its houses in the same instant the ability resolved, regardless of
+   where the bus was. Reused the exact same proportional-arrival-time
+   estimate the old demolish-sound timing already used (per-leg
+   `glideMs / tileCount`), just now driving a visual reveal too, not only
+   a sound.
+
+**Why these calls:** the architectural consolidation (one effect owns the
+whole tour, always) wasn't asked for directly, but was necessary to
+deliver items 2-5 without two effects racing to control the same token —
+flagged as a prerequisite rather than silently expanding scope. The dust
+trail's start/stop boundaries (only once gliding, stopping at the glide's
+end not the landing bounce) were chosen to match "trailing the token"
+literally — dust implies something is actually moving to kick it up.
+
+**State at end of pass:** server `npm test` 173/173 (unchanged — no
+server-side changes this pass, `demolished`/`path` were already
+broadcast). Client `vite build` clean, `oxlint` unchanged (same 4
+pre-existing warnings, none new). Not visually verified by the assistant
+— user's own dev-server convention for this project — user to confirm:
+the 1.5s pause actually reads as "revving," the half-speed glide doesn't
+feel sluggish in practice, dust looks right regardless of which board
+edge the bus is travelling along (the scatter is deliberately
+omnidirectional, not a single trailing streak), and each demolish really
+does line up with the bus's visual position rather than firing early/late
+(it's still a proportional estimate, same approximation the old
+demolish-sound timing already used, not true tile-by-tile stepping).
+
+---
+
+## Pass 56 — 2026-07-12 — Hostile Takeover follow-up: crown drop-in synced to the sting, land-shake, and a gradual recolor reveal
+
+**Goal:** direct follow-up to Pass 55, user's own request — the crown's
+appearance and the tile recolor both read as too instant. Wanted: the
+crown to drop in (scale down from oversized to fit), synced with the
+sound; once it lands, a shake on both the board and the crown itself for
+a "settle in" feeling; and the tile's color change to happen gradually
+instead of immediately, triggered as the crown is shaking.
+
+**What was done (`BoardClassic.jsx`):** the single flash-on-cast effect
+from Pass 55 is now a two-phase drop-then-land sequence off the same
+`hostileTakeoverSeq` bump (no server changes needed — still one
+synchronous event):
+- **Drop** (`DROP_MS` = 450ms): `playHostileTakeover()` fires at the same
+  instant the crown starts its scale-in, so the two are synced by
+  construction rather than by guessing a delay — if the sting's own
+  audible impact doesn't land exactly at 450ms once actually heard,
+  `DROP_MS` is the one constant to retune, not the animation itself.
+  During this phase, the tile's real owner-color is deliberately
+  *suppressed*: `takeoverPending` (`{ tileId, prevOwnerId }`) makes
+  `ClassicTile` keep showing the previous owner's color (or none) instead
+  of snapping to H's the instant `owned.ownerId` flips server-side
+  (which already happened synchronously before this broadcast even
+  arrives — same reasoning as Pass 55, just now visually held back on
+  purpose).
+- **Land** (`LAND_MS` = 400ms, starts when Drop ends): three things fire
+  together — the crown's own settle-shake (`cv2-takeover-icon--land`),
+  the shared `boardShaking` jolt (reused from Barricade/Detonate, not a
+  new flag), and the tile's existing red impact wash
+  (`cv2-tile--takeover-flash`, previously fired at cast time in Pass 55,
+  now retimed to fire here instead so it reads as part of the impact
+  beat, not a separate earlier event).
+- **Recolor** (`RECOLOR_MS` = 550ms, starts alongside Land): suppression
+  lifts and the real owner color is revealed, with a new
+  `cv2-tile--takeover-recolor` class active so the same background-color
+  change that used to snap now transitions smoothly — scoped to just
+  this class (not added to `.cv2-tile` generally) so mortgaging or a
+  future seizure elsewhere still snap instantly, unaffected.
+
+**What was done (`classicVintage.css`):**
+- `.cv2-takeover-icon`'s left/right rotation moved from a static
+  `transform` override (Pass 55) to a `--rot` custom property folded into
+  every frame of two new keyframes, `cv2-takeover-drop` (oversized+faded
+  → resting size, `ease-in` — gravity accelerating in, not settling) and
+  `cv2-takeover-land-shake` (a few px of jitter + scale wobble). Both
+  needed this because they animate `transform` too, and a static override
+  would get replaced wholesale while either animation plays, losing the
+  rotation until it finished — same left/right bug class flagged in Pass
+  55, recurring here for a different reason (the icon's `transform` now
+  has three different sources instead of one, all needing to agree on
+  rotation simultaneously).
+- Both new keyframe animations run *alongside* the existing idle-pulse
+  (`cv2-takeover-icon--drop`/`--land` list two animations, comma-
+  separated) rather than replacing it — idle-pulse only touches `filter`,
+  these only touch `transform`, so they compose without clobbering each
+  other, the same trick already used for the rotation/idle-pulse pairing.
+- `.cv2-tile--takeover-recolor { transition: background 0.55s ease; }` —
+  the whole mechanism for the gradual reveal. Works because the class is
+  added in the *same* React commit as `ownerColor`'s value actually
+  changes (both driven off the same `takeoverRecolor`/`takeoverPending`
+  state flip in one `setTimeout` callback, batched by React), which is
+  enough for the browser to animate the transition even though the
+  underlying value technically flips instantly in the DOM.
+
+**Why these calls:** kept the crown's rotation correctness (the bug the
+user pre-flagged from Pass 55, generalized) as the first thing checked
+once transform-based animations entered the picture, rather than
+retrofitting it after noticing crowns render sideways on a left/right
+tile mid-animation. The recolor-suppression approach (show the *previous*
+owner's color, then reveal the real one with a transition) was chosen
+over trying to animate the color change directly from old to new at cast
+time, specifically because the real value already changed
+server-side by the time the broadcast lands — there's no way to
+transition a value that's already flipped without first holding the old
+one back for display.
+
+**State at end of pass:** server `npm test` 173/173 (unchanged — no
+server-side changes this pass). Client `vite build` clean, `oxlint`
+unchanged (same 4 pre-existing warnings, none new). Not visually verified
+by the assistant — user's own dev-server convention for this project —
+user to confirm the drop/sting sync actually lines up once heard (retune
+`DROP_MS` if not), and to re-check the left/right rotation specifically
+now that it's animated, not just static.
+
+**Immediate follow-up, same pass session:** user's own call after seeing
+it once — the drop felt too fast, doubled to `DROP_MS = 900`. Updated
+both the JS timer (`BoardClassic.jsx`) and `cv2-takeover-icon--drop`'s own
+`animation-duration` (`classicVintage.css`, 0.45s → 0.9s) together, since
+the two have to stay equal — the JS timer is what actually ends the drop
+phase and starts land/recolor, so if it drifted from the CSS animation's
+own duration the crown would either finish scaling in and sit idle for a
+beat before the land-shake fires, or get cut off mid-animation.
+
+---
+
+## Pass 55 — 2026-07-12 — Hostile Takeover gets a real cast/standing/payoff animation (fourth from abilities.md's brainstorm table)
+
+**Goal:** fourth ability picked from abilities.md's brainstorm table,
+user's own choice (offered Hostile Takeover vs. Copy Cat via
+`AskUserQuestion`, took the doc's own suggested order). Hostile Takeover
+had zero client-side representation before this pass.
+
+**Planned before writing code:** read `kingpin.js`'s `active()` first and
+found the brainstorm table's "tile recolors to H's color" bullet is
+already true for free — `ClassicTile`'s `ownerColor` already reads
+straight off `owned.ownerId`, which `active()` already flips to the
+caster synchronously. The only genuine visual gap left was a way to tell
+a *seized* tile apart from H having bought it normally (the table's own
+crown/lock-icon suggestion). Also confirmed cast+payoff are synchronous
+here, same shape as Detonate (not Barricade/Curse's two-pair split) — one
+new broadcast pair covers both. `room.hostileTakeover` was already
+confirmed broadcast in `toState()`/`toSnapshot()` before this pass
+(abilities.md's "Correction" note), so the standing crown needed zero
+server work, same pattern as `barricaded`/`isCursed`.
+
+**What was done (assets):** user supplied `crown.png` and `takeover.mp3`
+at the repo root; copied into `client/public/crown.png` and
+`client/public/sounds/takeover.mp3` per the established convention.
+
+**What was done (server):**
+- `Room.js`: new `hostileTakeoverSeq`/`lastHostileTakeover` pair
+  (`{ casterId, tileId, previousOwnerId }`), added to
+  `toState()`/`toSnapshot()`/`fromSnapshot()` alongside the existing
+  ability broadcast fields.
+- `kingpin.js`: bumps the new pair once per successful `active()` call
+  (not on a rejection), right after `room.hostileTakeover` is set.
+  `previousOwnerId` is carried separately from
+  `hostileTakeover.previousOwnership` (which the client never reads) so a
+  future payoff visual could distinguish "seized from another player" vs.
+  "seized an unowned tile" without re-deriving it.
+- `kingpin.test.js`: 2 new tests — seizing bumps the pair with the right
+  shape (including `previousOwnerId: null` for an unowned tile), and a
+  rejected attempt (invalid target) does NOT bump it. Matches Detonate's
+  own broadcast-test convention (Pass 52).
+
+**What was done (client):**
+- `client/src/sfx.js`: new `playHostileTakeover`
+  (`makeClipPlayer("/sounds/takeover.mp3")`).
+- `BoardClassic.jsx`: eager-preloads `crown.png` alongside the other
+  ability icons. New `hostileTakeoverSeq` effect plays the sting and sets
+  `takeoverFlashTileId` for 500ms — deliberately no multi-phase sequence
+  or board-wide wash like Barricade/Curse/Detonate get, since the table
+  asks for a quick contained "snatch," not a showpiece. `ClassicTile`
+  gets a `seized` prop (renders the crown, read straight off
+  `room.hostileTakeover` — no local state) and a `takeoverFlash` prop
+  (the one-shot red sweep, `cv2-tile--takeover-flash`).
+- `classicVintage.css`: `.cv2-takeover-icon` (crown, red idle-pulse glow,
+  same clamp/centering as `.cv2-barricade-icon`) with its own
+  `.cv2-side-left`/`.cv2-side-right` rotation rules — checked explicitly
+  per the user's own reminder that Barricade's icon hit exactly this bug
+  the first time it landed on a left/right edge tile (Pass 49). Also
+  folded `seized` into `ClassicTile`'s remount key (the
+  mortgaged/houses/barricaded/detonating Chromium layout-cache
+  workaround, Pass 48/49/52) for the same reason, per the same reminder.
+
+**Why these calls:** the user flagged both Barricade-icon bugs (rotation,
+layout-cache key) up front before implementation started, specifically
+because this is the same shape of feature (a conditionally-rendered icon
+inside `ClassicTile`) — both were addressed directly rather than
+discovered later. Kept the cast+payoff deliberately smaller/tile-scoped
+(no board dim, no multi-phase timing) since the brainstorm table
+describes this ability's moment as a quick flash + sting, not a showpiece
+like Detonate's.
+
+**State at end of pass:** server `npm test` 173/173 (2 new). Client `vite
+build` clean, `oxlint` unchanged (same 4 pre-existing warnings, none
+new). Not visually verified by the assistant — user's own dev-server
+convention for this project — user to cast Hostile Takeover on both an
+owned tile (confirm previous owner's band/houses hide correctly under the
+recolor, crown appears, flash plays) and an unowned one, on a left/right
+edge tile specifically (confirm the crown's rotation), and let it revert
+naturally on H's own next turn (confirm the crown disappears the instant
+`room.hostileTakeover` nulls, no lingering).
+
+---
+
 ## Pass 54 — 2026-07-12 — Detonate's alarm phase gets a scanning crosshair that sweeps the board and locks onto the target
 
 **Goal:** direct follow-up to Pass 53, entirely the user's own direction

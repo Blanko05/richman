@@ -1,6 +1,6 @@
 import { ICONS } from "../data/icons";
 
-export default function PlayerToken({ player, stackIndex, stackTotal, leftPct, topPct, glideMs, glideEase, isMoving, isLanding, justBought, isActiveTurn, isBusRiding, isBarricadeSnap, isCursed, isCurseDraining }) {
+export default function PlayerToken({ player, stackIndex, stackTotal, leftPct, topPct, glideMs, glideEase, isMoving, isLanding, justBought, isActiveTurn, isBusRiding, isBusDust, isBarricadeSnap, isCursed, isCurseDraining }) {
   const wrapStyle = {
     "--c": player.color,
     "--i": stackIndex,
@@ -21,6 +21,7 @@ export default function PlayerToken({ player, stackIndex, stackTotal, leftPct, t
     isMoving && "cv2-token--floating",
     !isMoving && isLanding && "cv2-token--landing",
     justBought && "cv2-token--celebrate",
+    isBusRiding && "cv2-token--bus-glow",
     isBarricadeSnap && "cv2-token--barricade-snap",
     isCurseDraining && "cv2-token--curse-drain",
   ].filter(Boolean).join(" ");
@@ -30,6 +31,15 @@ export default function PlayerToken({ player, stackIndex, stackTotal, leftPct, t
 
   return (
     <span className="cv2-token" style={wrapStyle} title={player.name}>
+      {/* Wrecking Tour dust trail -- rendered BEFORE cv2-token-inner (not
+          after) so plain DOM/paint order puts it behind the bus face
+          rather than on top, with no z-index needed. Only true once the
+          bus is actually gliding (BoardClassic's busDustId, set after the
+          pre-departure pause), not during the parked revving window --
+          see that effect's own comment for why. */}
+      {isBusDust && Array.from({ length: 5 }, (_, i) => (
+        <span key={i} className="cv2-token-dust" style={{ "--i": i }} />
+      ))}
       <span className={innerCls} style={innerStyle}>
         {isBusRiding ? (
           // Wrecking Tour: swap out whatever the rider's own icon/face is

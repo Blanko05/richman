@@ -411,11 +411,12 @@
   /* Deliberately way above any tile-internal z-index (price tag: 2, board
      dim/alarm wash: 2, tile-selected: 3, building badge: 4, barricade
      icon: 5, its dust-puff: 6, detonate reticle: 7, its burst: 8, its
-     crumbling icons: 9, its camera-flash: 10) or board-wide effect
-     overlay (curse tendril: 40, detonate scanning crosshair: 42) --
-     tokens must always render on top of anything tile/effect-related, not
-     just these specific values. Keep any future z-index comfortably under
-     this one rather than creeping up to meet it. */
+     crumbling icons: 9, its camera-flash: 10, takeover crown/flash: 11) or
+     board-wide effect overlay (curse tendril: 40, detonate scanning
+     crosshair: 42) -- tokens must always render on top of anything
+     tile/effect-related, not just these specific values. Keep any future
+     z-index comfortably under this one rather than creeping up to meet
+     it. */
   z-index: 50;
   pointer-events: none;
 }
@@ -965,6 +966,63 @@
   z-index: 3;
 }
 
+/* ---------- SD's Wrecking Tour ---------- */
+/* Blue engine glow for as long as the rider is riding the bus (from the
+   very instant the ability fires, not just once actually moving -- see
+   BoardClassic.jsx's busRidingId, set immediately at cast, well before
+   the pre-departure pause elapses). Fixed bus-blue rather than the
+   rider's own player color (--c, used by the ordinary active-turn glow
+   above) -- this is meant to read as "the bus itself," not a
+   personalized effect. Declared AFTER .cv2-token--active's own glow rule
+   above (same specificity, so source order decides) so it wins whenever
+   both apply at once -- the common case, since the caster is virtually
+   always still on their own turn for the whole ride. */
+@keyframes cv2-token-bus-glow {
+  0%, 100% {
+    box-shadow: 0 9px 10px rgba(0,0,0,0.45), 0 3px 4px rgba(0,0,0,0.35),
+      0 0 0 2px rgba(255,255,255,0.9),
+      0 0 14px 6px rgba(41, 182, 246, 0.75);
+  }
+  50% {
+    box-shadow: 0 9px 10px rgba(0,0,0,0.45), 0 3px 4px rgba(0,0,0,0.35),
+      0 0 0 2px rgba(255,255,255,0.9),
+      0 0 26px 12px rgba(41, 182, 246, 1);
+  }
+}
+.cv2-token--bus-glow .cv2-token-face {
+  animation: cv2-token-bus-glow 1.4s ease-in-out infinite;
+}
+
+/* Dust trail (PlayerToken.jsx's isBusDust, only true once the bus is
+   actually gliding -- see BoardClassic.jsx's busDustId, set once the
+   pre-departure pause elapses): several small puffs staggered via --i
+   (same per-icon stagger technique Detonate's crumbling icons use), for
+   an "exaggerated" cloud instead of one faint wisp -- user's own word for
+   the effect. Omnidirectional scatter rather than a single trailing
+   streak behind the direction of travel, since the bus can be heading any
+   of the four cardinal directions depending on which edge of the board
+   it's on, and a scatter reads fine regardless of heading. Rendered
+   before .cv2-token-inner in the DOM (PlayerToken.jsx) so plain paint
+   order puts it behind the bus face -- no z-index needed. */
+.cv2-token-dust {
+  position: absolute;
+  bottom: 10%;
+  left: 50%;
+  width: 26%;
+  aspect-ratio: 1;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(196, 168, 122, 0.9) 0%, rgba(196, 168, 122, 0) 70%);
+  transform: translate(-50%, 0) scale(0.3);
+  opacity: 0;
+  animation: cv2-token-dust-puff 0.55s ease-out infinite;
+  animation-delay: calc(var(--i, 0) * 0.11s);
+  pointer-events: none;
+}
+@keyframes cv2-token-dust-puff {
+  0%   { transform: translate(-50%, 0) scale(0.3); opacity: 0.9; }
+  100% { transform: translate(calc(-50% + (var(--i, 0) - 2) * 16px), 65%) scale(1.4); opacity: 0; }
+}
+
 /* ---------- D's Barricade ---------- */
 /* Standing indicator: rendered whenever room.barricade.tileId === this
    tile's own id, OR while barricadeLingerTileId still points at it (see
@@ -1267,6 +1325,120 @@
 @keyframes cv2-detonate-crumble-fall {
   0%   { transform: translate(-50%, -50%) rotate(0deg); opacity: 1; }
   100% { transform: translate(calc(-50% + var(--drift, 1) * 55%), 60%) rotate(calc(var(--drift, 1) * 220deg)); opacity: 0; }
+}
+
+/* ---------- H's Hostile Takeover ---------- */
+/* Standing indicator: the tile's own recolor to H's color is already free
+   (owned.ownerId flips the instant kingpin.js's active() resolves, and
+   ClassicTile's ownerColor already reads straight off it -- no CSS needed
+   for that part; see the takeover-recolor transition further below for
+   why it's held back and revealed gradually instead of showing instantly
+   here). This crown exists purely so a seized tile still reads as
+   "seized," not indistinguishable from H having bought it normally.
+   Same clamp/centering approach as .cv2-barricade-icon, tinted red via the
+   idle-pulse glow instead of brown to read as hostile rather than
+   defensive.
+
+   --rot holds the left/right rotation (same rotate(90deg)/-90deg
+   convention as .cv2-barricade-icon) as a custom property, rather than
+   overriding `transform` wholesale the way barricade-icon does -- the
+   drop/land keyframes below both animate `transform` too, and folding
+   var(--rot) into every one of their frames is what keeps the crown
+   right-side-up on a left/right tile through the whole drop+land
+   animation, not just at rest. */
+.cv2-takeover-icon {
+  --rot: 0deg;
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%) rotate(var(--rot));
+  width: clamp(18px, 3vw, 30px);
+  z-index: 11;
+  filter: drop-shadow(0 2px 3px rgba(0, 0, 0, 0.65));
+  animation: cv2-takeover-idle-pulse 1.8s ease-in-out infinite;
+  pointer-events: none;
+}
+@keyframes cv2-takeover-idle-pulse {
+  0%, 100% { filter: drop-shadow(0 2px 3px rgba(0,0,0,0.65)) drop-shadow(0 0 0 rgba(178,24,24,0)); }
+  50%      { filter: drop-shadow(0 2px 3px rgba(0,0,0,0.65)) drop-shadow(0 0 6px rgba(178,24,24,0.85)); }
+}
+.cv2-side-left .cv2-takeover-icon {
+  --rot: 90deg;
+}
+.cv2-side-right .cv2-takeover-icon {
+  --rot: -90deg;
+}
+
+/* Cast moment (drop): the crown scales in from oversized and faded down to
+   its resting size -- "larger to smaller until it fits the tile," timed
+   (DROP_MS in BoardClassic.jsx -- this duration must stay equal to that
+   constant, since that's the JS timer deciding when the land phase
+   starts) to land exactly as the sting's own impact hits. Runs as a
+   SECOND animation alongside the idle-pulse above rather than replacing
+   it -- idle-pulse only ever touches `filter`, this one only ever touches
+   `transform`, so both play concurrently without clobbering each other
+   (same reasoning the left/right rotation and idle-pulse already coexist
+   on this element). ease-in (not the bouncy overshoot Wrecking Tour's bus
+   scale uses) deliberately -- gravity accelerating in, not settling; the
+   settle/overshoot feeling comes from the land-shake below instead, once
+   it actually lands. */
+.cv2-takeover-icon--drop {
+  animation: cv2-takeover-idle-pulse 1.8s ease-in-out infinite, cv2-takeover-drop 0.9s cubic-bezier(0.55, 0, 0.85, 0.35) 1;
+}
+@keyframes cv2-takeover-drop {
+  0%   { transform: translate(-50%, -50%) rotate(var(--rot)) scale(2.6); opacity: 0; }
+  55%  { opacity: 1; }
+  100% { transform: translate(-50%, -50%) rotate(var(--rot)) scale(1); opacity: 1; }
+}
+
+/* Payoff moment (land): fires the instant the drop phase ends
+   (LAND_MS in BoardClassic.jsx) -- the crown gets its own settle-shake
+   here, layered on top of the shared board shake
+   (.cv2-board--shake, reused from Barricade/Detonate) and the tile's own
+   red impact wash (cv2-tile--takeover-flash below) firing at the exact
+   same instant, so all three read as one "it just landed" beat. */
+.cv2-takeover-icon--land {
+  animation: cv2-takeover-idle-pulse 1.8s ease-in-out infinite, cv2-takeover-land-shake 0.4s ease-in-out 1;
+}
+@keyframes cv2-takeover-land-shake {
+  0%   { transform: translate(-50%, -50%) rotate(var(--rot)) scale(1); }
+  20%  { transform: translate(calc(-50% - 4px), calc(-50% + 2px)) rotate(var(--rot)) scale(1.1); }
+  40%  { transform: translate(calc(-50% + 3px), calc(-50% - 2px)) rotate(var(--rot)) scale(0.95); }
+  60%  { transform: translate(calc(-50% - 2px), calc(-50% + 1px)) rotate(var(--rot)) scale(1.04); }
+  80%  { transform: translate(calc(-50% + 1px), -50%) rotate(var(--rot)) scale(0.99); }
+  100% { transform: translate(-50%, -50%) rotate(var(--rot)) scale(1); }
+}
+
+/* Payoff moment: a brief hostile-red flash across the seized tile the
+   instant the crown lands (BoardClassic.jsx's takeoverLand) -- tile-scoped
+   only (no board-wide wash the way Barricade/Curse/Detonate get -- this
+   ability's own moment is meant to read as a quick, contained "snatch,"
+   not a showpiece). */
+.cv2-tile--takeover-flash::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: rgba(178, 24, 24, 0.55);
+  z-index: 11;
+  pointer-events: none;
+  animation: cv2-takeover-flash 0.5s ease-out 1;
+}
+@keyframes cv2-takeover-flash {
+  0%   { opacity: 1; }
+  100% { opacity: 0; }
+}
+
+/* Payoff moment: the tile's real owner-color reveal. ClassicTile
+   deliberately shows the PREVIOUS owner's color (or none) while
+   takeoverColorPending is true, then swaps to the real one the instant the
+   crown lands -- this class is what turns that swap into a gradual fade
+   instead of an instant snap, active only for the same RECOLOR_MS window
+   BoardClassic.jsx holds takeoverRecolor open. Scoped to this one class
+   (not added to .cv2-tile generally) so every other background change --
+   mortgaging, a future seizure -- stays an instant snap, same as before
+   this pass. */
+.cv2-tile--takeover-recolor {
+  transition: background 0.55s ease;
 }
 
 /* ---------- Card reveal (Surprise / Treasure) ---------- */

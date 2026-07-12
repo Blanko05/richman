@@ -16,12 +16,12 @@ there too for anything non-trivial).
 
 | Character | Ability | Status |
 |---|---|---|
-| SD — Conductor | Wrecking Tour | **Partially done** — see below |
+| SD — Conductor | Wrecking Tour | **Done** — see below |
 | D — Don | Barricade | **Done** — see below |
 | Z — Enforcer | Curse | **Done** — see below |
 | Y — Wrecker | Detonate | **Done** — see below |
-| H — Kingpin | Hostile Takeover | Not started — no visual at all currently |
-| SE — Fixer | Copy Cat | Not started |
+| H — Kingpin | Hostile Takeover | **Done** — see below |
+| SE — Fixer | Copy Cat | **Skipped** — user's call, not being built |
 | *(all)* | Ready-to-cast signal | Not started |
 
 ### Wrecking Tour — what's actually done
@@ -42,11 +42,35 @@ there too for anything non-trivial).
   (a near-full-lap-back-to-itself move that the generic move-detection
   effect couldn't see as a "move" — see progress.md Pass 47). Also fixed:
   the demolish-sound timing silently broke in that same edge case.
+- **Full polish pass (user's own explicit spec, Pass 57)**: the dedicated
+  `wreckingTourSeq` effect in `BoardClassic.jsx` now owns the ENTIRE
+  sequence for every tour (not just the same-tile edge case above) — the
+  generic move-detection effect explicitly excludes the tour caster's own
+  move now, so there's no more split between the two.
+  - Bus icon + a fixed blue engine glow (`cv2-token--bus-glow`, distinct
+    from the ordinary per-player active-turn glow) both start the instant
+    the ability fires, not just once actually moving.
+  - `motor.mp3` (`playMotor`) plays at that same instant, followed by a
+    1.5s pre-departure pause (parked, revving) before the glide actually
+    starts — also closes the brainstorm table's old "punchier departure
+    sound" item, replacing the plain move-swoosh entirely for this
+    ability.
+  - The glide itself runs at half the normal speed (every leg's own
+    `glideMs` doubled, after the usual min/max clamp).
+  - An exaggerated dust trail (`cv2-token-dust`, 5 staggered puffs) trails
+    the token, but only once actually gliding — off during the parked
+    revving pause.
+  - Each demolished tile's building count only drops client-side once the
+    bus's own visual glide actually reaches that tile — previously every
+    flattened tile along the whole route lost its houses in the same
+    instant the ability resolved, regardless of where the bus visually
+    was yet (`pendingDemolish` in `BoardClassic.jsx`, `demolishPendingLevels`
+    prop in `ClassicTile`).
 
-**Still open for Wrecking Tour specifically:** a punchier departure/impact
-sound (currently just reuses the plain sell-building sound per demolished
-tile — see the brainstorm table's suggestion of a horn-honk + bigger
-crash/screen-shake).
+**Still open for Wrecking Tour specifically:** the brainstorm table's
+"bigger crash/screen-shake per building flattened" — each demolish is now
+correctly *synced* to the bus's position, but still just plays the plain
+`playSellBuilding()` sound with no shake, not a punchier dedicated crash.
 
 ### Barricade — what's actually done
 
@@ -79,8 +103,9 @@ one-shot cast/payoff *event* signal, and even that's half-done for
 Barricade (`barricadeSeq`/`lastBarricadeStop` already covers the payoff,
 same as Wrecking Tour's own pair — only the cast moment had no server
 field, and didn't end up needing one, per the diff-the-object trick above).
-Hostile Takeover still needs this worked through on its own next -- Curse
-closed it (see below).
+Curse closed its own version of this next (see below), and Hostile
+Takeover closed the last of it after Detonate (see further below) — only
+Copy Cat is left.
 
 ---
 
@@ -186,34 +211,76 @@ four-phase sequence just runs on its own fixed local timing.
 
 ---
 
-## Brainstorm (first pass, not yet built except Wrecking Tour + Barricade + Curse + Detonate above)
+### Hostile Takeover — what's actually done
 
-Both real gaps flagged below are now closed for **every** ability except
-Hostile Takeover:
+Same synchronous-cast-and-payoff shape as Detonate (`kingpin.js`'s
+`active()` resolves the seizure in one call, no separate targeting step),
+so one new pair covers the whole thing: `room.hostileTakeoverSeq`/
+`room.lastHostileTakeover` (`{ casterId, tileId, previousOwnerId }`).
 
-1. **No cast/payoff *event* broadcast for Hostile Takeover.** Wrecking
-   Tour has `room.wreckingTourSeq`/`room.lastWreckingTour`; Barricade has
-   `room.barricadeSeq`/`room.lastBarricadeStop`; Curse now has
-   `curseCastSeq`/`lastCurseCast` + `curseDrainSeq`/`lastCurseDrain`.
-   Hostile Takeover has neither a payoff seq nor a cast one yet — only the
-   caster's own ack ever sees the immediate result of `useAbility()`.
-   `hostileTakeover` is a single object (not a list, like `barricade`), so
-   check whether Barricade's cheaper diff-the-object trick works for its
-   cast moment before reaching for a new seq field there too.
-2. **No board-level visual for Hostile Takeover at all**, seized or not —
-   not even a static one, despite `hostileTakeover` already being
-   broadcast in `toState()`/`toSnapshot()` (confirmed — nothing
-   server-side is blocking a standing indicator, same as was true for
-   Barricade and Curse before their own passes).
+- **Standing indicator**: the tile's own recolor to H's color was already
+  free before this pass — `ClassicTile`'s `ownerColor` reads straight off
+  `owned.ownerId`, and `kingpin.js` already flips that to the caster
+  synchronously. What was actually missing was a way to tell a *seized*
+  tile apart from H having bought it normally: a pulsing red-glow crown
+  icon (`crown.png`), read straight off `room.hostileTakeover` — no
+  seq/broadcast plumbing needed, same pattern as Barricade's
+  `barricaded`/Curse's `isCursed`. `ClassicTile` (`seized` prop).
+- **Cast+payoff moment**: user follow-up request (still same original ask)
+  to make the seizure itself feel more like a real event landing, not a
+  single instant flash — `BoardClassic.jsx` now sequences a **drop-then-
+  land** beat off the one `hostileTakeoverSeq` bump instead:
+  1. **Drop** (~450ms): the crown scales in from oversized/faded down to
+     its resting size (`cv2-takeover-icon--drop`), timed to land as
+     `takeover.mp3`'s (`playHostileTakeover`) own impact hits. The tile's
+     real owner-color change is intentionally *suppressed* during this
+     phase — `ClassicTile` shows the previous owner's color (or none)
+     via `takeoverColorPending`/`takeoverPrevOwnerId` instead of snapping
+     to the real one the same frame the crown starts falling.
+  2. **Land** (~400ms): the crown gets its own settle-shake
+     (`cv2-takeover-icon--land`), the board gets the shared
+     `boardShaking` jolt (reused from Barricade/Detonate), and the tile
+     gets a brief hostile-red impact wash (`cv2-tile--takeover-flash`) —
+     all three fire together as one beat.
+  3. **Recolor** (~550ms, starts with Land): the suppression lifts and
+     the real owner color is revealed, but with a scoped
+     `cv2-tile--takeover-recolor` transition class active so the change
+     reads as a gradual fade timed to the landing rather than an instant
+     snap — removed again once its own window elapses so unrelated color
+     changes (mortgaging, a future seizure) stay instant snaps.
+
+  Still tile-scoped only, no board-wide dim/wash the way Barricade/Curse/
+  Detonate get — deliberately smaller in scope than Detonate's showpiece,
+  reads as a quick, contained "snatch," just with a proper arrival beat
+  now instead of a single flash.
+
+**Two bugs checked for explicitly before calling this done** (the user
+flagged both up front, since a tile-level standing icon is the same shape
+of feature Barricade's `barricaded` icon already hit twice): the crown's
+rotation is a `--rot` custom property folded into every frame of the
+drop/land keyframes (not a static `transform` override the way
+`.cv2-barricade-icon` does it — the drop/land animations both also
+animate `transform`, so the rotation has to travel with them, not just
+apply at rest), and `seized` was folded into `ClassicTile`'s `.cv2-body`
+remount key (the Chromium layout-cache workaround) — see "Infra already
+available" below for what each bug actually looks like.
+
+---
+
+## Brainstorm (first pass, not yet built except Wrecking Tour + Barricade + Curse + Detonate + Hostile Takeover above)
+
+Copy Cat is **skipped entirely** — user's call — so every ability actually
+being built for this doc is now done. This table is kept as a record of
+what shipped, not as a remaining to-do list.
 
 | Character | Cast moment | Standing indicator | Payoff moment |
 |---|---|---|---|
 | **Don — Barricade** | *(done — board dim + tile slam + dust puff)* | *(done — pulsing wall icon)* | *(done — screen-shake + thud + token snap)* |
 | **Enforcer — Curse** | *(done — dark tendril + purple-red board vignette)* | *(done — pulsing skull badge, token + sidebar row)* | *(done — synthesized drain tone + token flash + sidebar "💀 -$X")* |
 | **Wrecker — Detonate** | *(done — 8s siren + board alarm pulse, tile glow, exaggerated reticle)* | *(instant effect, no standing state)* | *(done — camera flash + bigger burst ring + crumbling house/hotel icons + boom.mp3, ~9.5s showpiece sequence)* |
-| **Kingpin — Hostile Takeover** | A "hostile" red flash sweep across the tile | Tile visibly recolors to H's color/pattern with a small crown or lock icon, distinct from normal ownership | A satisfying "cha-ching"/heist sting the instant it flips; the log line already exists but has no sound backing it |
-| **Conductor — Wrecking Tour** | *(done — bus icon + scale-up)* | — | Still open: a punchier "horn honk" on departure + a bigger crash/screen-shake per building flattened, not just the current reused sell-sound |
-| **Fixer — Copy Cat** | A "photocopy"/mirror-flash effect on SE's token, briefly showing the copied character's icon/color | — | Whatever the copied ability's own payoff is, plus a small "copied!" badge so it reads as Copy Cat, not the original character acting |
+| **Kingpin — Hostile Takeover** | *(done — crown drops in, scaling down, synced to takeover.mp3)* | *(done — recolor, already free, + pulsing crown icon)* | *(done — land-shake + board shake + red flash + gradual recolor reveal)* |
+| **Conductor — Wrecking Tour** | *(done — bus icon + blue engine glow + motor.mp3 + 1.5s revving pause)* | *(instant-ish effect, no persistent standing state beyond the ride itself)* | *(done — half-speed dust-trailing glide, each demolish synced to the bus's own visual position)* Still open: a punchier per-building crash sound + screen-shake, not just the reused sell-sound |
+| ~~**Fixer — Copy Cat**~~ | ~~A "photocopy"/mirror-flash effect on SE's token, briefly showing the copied character's icon/color~~ | — | ~~Whatever the copied ability's own payoff is, plus a small "copied!" badge so it reads as Copy Cat, not the original character acting~~ *(skipped — user's call)* |
 
 **Cross-ability ideas:**
 - A shared "ability ready" glow/pulse on the Activate button (and maybe the
@@ -245,7 +312,9 @@ Hostile Takeover:
   Barricade's payoff reused an existing one (`barricadeSeq`/
   `lastBarricadeStop`) this way; Curse needed two brand new ones
   (`curseCastSeq`/`lastCurseCast`, `curseDrainSeq`/`lastCurseDrain`), and
-  Hostile Takeover will likely need at least one too. For a *standing*
+  Hostile Takeover needed one (`hostileTakeoverSeq`/`lastHostileTakeover`,
+  covering cast+payoff together since they're synchronous, same as
+  Detonate's `detonateSeq`). For a *standing*
   indicator, check first whether the state is already broadcast plain in
   `toState()`/`toSnapshot()` before adding anything new —
   `barricade`/`activeCurses`/`hostileTakeover` all already are, so a
@@ -283,9 +352,9 @@ Hostile Takeover:
     just add the `makeClipPlayer(...)` export and this happens for free.
 - **Any tile-level standing-icon overlay (rendered inside `ClassicTile`,
   a sibling of `.cv2-body`) hit two real bugs building Barricade's
-  `barricaded` icon — check for both before shipping the next one
-  (Hostile Takeover's crown/lock icon is the same shape of feature, so
-  both are likely to recur there specifically):**
+  `barricaded` icon — check for both before shipping the next one.**
+  Confirmed to matter again for Hostile Takeover's crown (Pass 55 — same
+  shape of feature, both handled explicitly rather than rediscovered):
   1. **Left/right tile rotation.** `.cv2-body` itself rotates 180° on
      `.cv2-side-left`/`.cv2-side-right` (so its text reads outward along
      the rim), and every other icon on those edges follows suit
