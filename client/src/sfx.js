@@ -102,7 +102,7 @@ export const playError          = makeClipPlayer("/sounds/error.mp3");
 export const playTradePopup     = makeClipPlayer("/sounds/trade_offer.mp3");
 export const playTradeAccepted  = makeClipPlayer("/sounds/trade_accepted.mp3");
 export const playTradeDeclined  = makeClipPlayer("/sounds/trade_declined.mp3");
-export const playBoughtTile     = makeClipPlayer("/sounds/money_lost.mp3");     // ponytail: old buy sound removed; reuse loss chime (purchase = cash out)
+export const playBoughtTile     = makeClipPlayer("/sounds/buy.mp3", 0.5);       // user-supplied dedicated buy sound, replacing the reused money_lost.mp3 chime -- clip itself is loud at full volume
 
 // D's Barricade payoff -- a player actually stopped short by the wall
 // (barricadeSeq/lastBarricadeStop, see Room.js). Not gated by any log-string

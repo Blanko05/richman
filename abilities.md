@@ -209,6 +209,14 @@ reasoning Curse's payoff didn't need one, for a different underlying
 cause): Detonate isn't tied to a move or a glide at all, so the whole
 four-phase sequence just runs on its own fixed local timing.
 
+**Bug fixed (Pass 58):** the forced-mortgage branch (an empty lot) used
+to visibly go dull grey the instant the alarm phase started, ~9s before
+the blast — `owned.mortgaged` had already flipped server-side by the time
+the broadcast landed, same as the houses count, but nothing was holding
+that specific visual back the way the houses count already was. Fixed
+with the same pending-suppression-until-blast pattern the houses count
+uses (`detonateMortgagePending` prop, `ClassicTile`'s `displayMortgaged`).
+
 ---
 
 ### Hostile Takeover — what's actually done

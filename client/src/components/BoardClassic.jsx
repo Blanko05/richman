@@ -242,13 +242,22 @@ function HoldingCornerArt({ name, visitingLabel }) {
   );
 }
 
-function ClassicTile({ tile, owned, players, sideLen, onSelect, isSelected, targeting, barricaded, barricadeCasting, detonateGlow, detonateReticle, detonateBlast, seized, takeoverDrop, takeoverLand, takeoverColorPending, takeoverPrevOwnerId, takeoverRecolor, demolishPendingLevels }) {
+function ClassicTile({ tile, owned, players, sideLen, onSelect, isSelected, targeting, barricaded, barricadeCasting, detonateGlow, detonateReticle, detonateBlast, detonateMortgagePending, seized, takeoverDrop, takeoverLand, takeoverColorPending, takeoverPrevOwnerId, takeoverRecolor, demolishPendingLevels }) {
   const { id, name, price, amount, groupColor, type, visitingLabel } = tile;
   const { edge, row, col } = getLayout(id, sideLen);
   const hasIcon = type === "treasure" || type === "surprise" || type === "tax" || type === "transit" || type === "rest" || type in CORNER_ICON_SRC;
   const isLRSide = edge === "left" || edge === "right";
   const nameParts = name.split(" ");
   const isCorner = edge === "corner";
+  // Y's Detonate forced-mortgage case: while detonateMortgagePending is
+  // true for this tile, deliberately show it as NOT mortgaged yet, even
+  // though owned.mortgaged has already flipped true server-side (same
+  // synchronous-resolution reasoning as Hostile Takeover's recolor
+  // suppression below) -- held back until the blast phase actually fires
+  // (BoardClassic.jsx's detonateSeq effect) so the tile only goes dull
+  // grey in sync with the explosion, not ~9s early the instant the alarm
+  // starts.
+  const displayMortgaged = detonateMortgagePending ? false : owned?.mortgaged;
   // Mortgaged tiles go dull grey regardless of owner, so the board reads
   // "not earning rent" at a glance instead of still flashing the owner color.
   // H's Hostile Takeover: while takeoverColorPending is true for this tile,
@@ -260,7 +269,7 @@ function ClassicTile({ tile, owned, players, sideLen, onSelect, isSelected, targ
   // instant snap the same frame the crown starts dropping.
   const displayOwnerId = takeoverColorPending ? takeoverPrevOwnerId : owned?.ownerId;
   const ownerColor = displayOwnerId
-    ? (owned?.mortgaged ? "#5a5a5a" : players.find((p) => p.id === displayOwnerId)?.color)
+    ? (displayMortgaged ? "#5a5a5a" : players.find((p) => p.id === displayOwnerId)?.color)
     : null;
   // While an ability's tile-targeting is active (App.jsx's shared targeting
   // state machine), every tile becomes clickable -- e.g. Barricade can target
@@ -285,7 +294,7 @@ function ClassicTile({ tile, owned, players, sideLen, onSelect, isSelected, targ
       style={{ gridRow: row, gridColumn: col, ...(!isCorner && ownerColor ? { background: ownerColor } : {}) }}
       onClick={isClickable ? (e) => onSelect(id, e.currentTarget, edge) : undefined}
     >
-      {!isCorner && groupColor && !owned?.mortgaged && <div className="cv2-band" style={{ background: groupColor }} />}
+      {!isCorner && groupColor && !displayMortgaged && <div className="cv2-band" style={{ background: groupColor }} />}
       {!isCorner && badgeValue != null && (
         <div className="cv2-price-tag">
           <span className="cv2-price">${badgeValue}</span>
@@ -305,8 +314,10 @@ function ClassicTile({ tile, owned, players, sideLen, onSelect, isSelected, targ
           reason mortgaged/houses are here: it's the same bug, a new
           trigger each time. Forcing React to unmount/remount this node
           instead of patching it in place sidesteps the stale layout
-          entirely -- same effect a refresh has, without one. */}
-      <div key={`${!!owned?.mortgaged}-${houses}-${barricaded}-${!!detonateReticle}-${!!detonateBlast}-${!!seized}`} className={`cv2-body${hasIcon ? " cv2-body--icon" : ""}`}>
+          entirely -- same effect a refresh has, without one. Uses
+          displayMortgaged (not raw owned.mortgaged) so the forced-mortgage
+          reveal itself triggers this same remount right as it happens. */}
+      <div key={`${!!displayMortgaged}-${houses}-${barricaded}-${!!detonateReticle}-${!!detonateBlast}-${!!seized}`} className={`cv2-body${hasIcon ? " cv2-body--icon" : ""}`}>
         {type === "transit" ? (
           <div className="cv2-transit-layout">
             <span className="cv2-transit-name">{nameParts[0]}</span>
@@ -341,7 +352,7 @@ function ClassicTile({ tile, owned, players, sideLen, onSelect, isSelected, targ
         )}
       </div>
 
-      {!owned?.mortgaged && houses > 0 && (
+      {!displayMortgaged && houses > 0 && (
         <div className={`cv2-building-badge${isHotel ? " cv2-building-badge--hotel" : ""}`}>
           {isHotel ? (
             <span
@@ -821,6 +832,17 @@ export default function BoardClassic({ state, myId, tokenMoving, onTokenMovingCh
   const [detonateGlowTileId, setDetonateGlowTileId] = useState(null);
   const [detonateReticleTileId, setDetonateReticleTileId] = useState(null);
   const [detonateBlast, setDetonateBlast] = useState(null);
+  // Y's Detonate forced-mortgage case (an empty lot -- wrecker.js mortgages
+  // it instead of demolishing houses it doesn't have): owned.mortgaged has
+  // already flipped true server-side by the time this broadcast lands
+  // (synchronous, same as the houses reduction), so without this the tile
+  // would go dull grey the instant the alarm phase starts, ~9s before the
+  // blast that's supposed to be the actual payoff moment. Suppressed the
+  // same way Wrecking Tour's demolishPendingLevels/Hostile Takeover's
+  // takeoverColorPending hold back an already-applied server change --
+  // cleared at the exact same instant setDetonateBlast fires below, so the
+  // tile only visually goes grey in sync with the burst.
+  const [detonateMortgagePendingTileId, setDetonateMortgagePendingTileId] = useState(null);
   // Roaming crosshair during the alarm phase (DetonateCrosshairIcon) --
   // `{ tileId, glideMs, glideEase }` while sweeping/locking on, null once
   // the blast phase takes over. A standalone position, not folded into
@@ -1341,6 +1363,7 @@ export default function BoardClassic({ state, myId, tokenMoving, onTokenMovingCh
 
     playSirenAlarm(ALARM_MS / 1000);
     setDetonateAlarm(true);
+    if (lastDetonate.forcedMortgage) setDetonateMortgagePendingTileId(lastDetonate.tileId);
     const timers = [];
 
     // Crosshair scan+lock: fast constant-speed hops around the board
@@ -1382,6 +1405,7 @@ export default function BoardClassic({ state, myId, tokenMoving, onTokenMovingCh
       setDetonateReticleTileId(null);
       setDetonateBlast(lastDetonate);
       setDetonateCrosshairPos(null);
+      setDetonateMortgagePendingTileId(null);
       playExplosion();
       setBoardShaking(true);
     }, blastStart));
@@ -1519,6 +1543,7 @@ export default function BoardClassic({ state, myId, tokenMoving, onTokenMovingCh
             detonateGlow={detonateGlowTileId === tile.id}
             detonateReticle={detonateReticleTileId === tile.id}
             detonateBlast={detonateBlast?.tileId === tile.id ? detonateBlast : null}
+            detonateMortgagePending={detonateMortgagePendingTileId === tile.id}
             seized={hostileTakeover?.tileId === tile.id}
             takeoverDrop={takeoverDropTileId === tile.id}
             takeoverLand={takeoverLandTileId === tile.id}

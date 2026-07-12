@@ -9,6 +9,54 @@ in the same pass.
 
 ---
 
+## Pass 58 — 2026-07-12 — Sound cleanup (buy/auction/money-change), and Detonate's forced-mortgage now syncs to the blast
+
+**Goal:** three small user-requested changes, bundled into one pass.
+
+**What was done:**
+- **Buy sound**: `playBoughtTile` now plays a dedicated user-supplied
+  `buy.mp3` (copied into `client/public/sounds/`) instead of reusing
+  `money_lost.mp3` — the previous reuse was a stopgap noted inline
+  ("ponytail: old buy sound removed"). Volume set to 0.5 — the clip was
+  too loud at the default full volume.
+- **Removed sounds entirely**: auction start/won (the single
+  `newest.includes("auction")` log-line match in `App.jsx` covered both
+  events, so removing it silenced both at once) and the generic
+  balance-change gain/loss sounds (`playMoneyGained`/`playMoneyLost`,
+  along with the `prevBalancesRef` tracking that only existed for them —
+  removed together since nothing else read it). `playAuctionStart` is
+  left defined but unused in `sfx.js` rather than deleted, in case it's
+  wanted back.
+- **Detonate's forced-mortgage sync bug**: demolishing an empty lot
+  (wrecker.js's forced-mortgage branch) used to visibly go dull grey the
+  instant the alarm phase started — `owned.mortgaged` had already flipped
+  server-side by the time the broadcast landed (synchronous, same as the
+  houses reduction), but nothing was holding the VISUAL back the way
+  `demolishPendingLevels` already does for houses. Fixed with the same
+  pending-suppression pattern already used for Wrecking Tour's demolish
+  sync and Hostile Takeover's recolor: new `detonateMortgagePendingTileId`
+  state, seeded the instant the broadcast lands (only when
+  `lastDetonate.forcedMortgage` is true) and cleared at the exact same
+  timer that fires the blast — `ClassicTile`'s new
+  `detonateMortgagePending` prop derives a `displayMortgaged` value (false
+  while pending, real `owned.mortgaged` once revealed) that now backs
+  every mortgaged-dependent render path: `ownerColor`, the group-color
+  band, the building badge, and the Chromium-layout-cache remount key
+  (previously all read `owned?.mortgaged` directly).
+
+**Why these calls:** the mortgage-sync fix reuses the exact
+pending/reveal shape from Pass 57's `pendingDemolish` and Pass 56's
+`takeoverColorPending` rather than inventing a new mechanism — same root
+cause each time (a synchronously-resolved server change whose broadcast
+lands well before the animation's own payoff moment).
+
+**State at end of pass:** server `npm test` 173/173 (unchanged — no
+server-side changes). Client `vite build` clean, `oxlint` unchanged (same
+4 pre-existing warnings, none new). Not visually verified by the
+assistant — user's own dev-server convention for this project.
+
+---
+
 ## Pass 57 — 2026-07-12 — Wrecking Tour full polish pass: blue engine glow, revving pause, half-speed dust-trailing glide, and demolish-sync; Copy Cat skipped
 
 **Goal:** user's own explicit 5-point spec, and an explicit decision to

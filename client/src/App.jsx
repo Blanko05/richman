@@ -19,7 +19,7 @@ import CharactersWaitroom from "./components/CharactersWaitroom";
 import ThemeToggle from "./components/ThemeToggle";
 import { IconCopy, IconCheck } from "./components/icons";
 import { ICONS } from "./data/icons";
-import { playTradePopup, playTradeAccepted, playTradeDeclined, playBoughtTile, playMoneyGained, playMoneyLost, playCardPull, playWin, playGameStart, playAuctionStart, playError, playMortgage, playBuild, playSellBuilding, playDoubleDice, playThirdDouble, playGoToPrison } from "./sfx";
+import { playTradePopup, playTradeAccepted, playTradeDeclined, playBoughtTile, playCardPull, playWin, playGameStart, playError, playMortgage, playBuild, playSellBuilding, playDoubleDice, playThirdDouble, playGoToPrison } from "./sfx";
 import "./App.css";
 
 // Eagerly fetches every player-icon image the instant this module loads --
@@ -64,10 +64,6 @@ function App() {
   useEffect(() => {
     applyTheme(theme);
   }, [theme]);
-
-  // Tracks each player's last-known balance so any log entry that involves a
-  // balance change can play the appropriate gain/loss sound once for everyone.
-  const prevBalancesRef = useRef(new Map());
 
   // Tracks each player's last-known position so an incoming "state" broadcast
   // that moves someone can flip tokenMoving to true in the SAME render as the
@@ -153,22 +149,6 @@ function App() {
     if (state.winnerId && !prevWinnerRef.current) playWin();
     prevWinnerRef.current = !!state.winnerId;
 
-    // Balance-change sounds: detect when any player's current balance is
-    // higher/lower than their last known balance. We only do this once per
-    // state update and avoid playing on the very first snapshot.
-    const prevBalances = prevBalancesRef.current;
-    let gained = false, lost = false;
-    (state.players || []).forEach((p) => {
-      const prev = prevBalances.get(p.id);
-      if (prev !== undefined) {
-        if (p.balance > prev) gained = true;
-        else if (p.balance < prev) lost = true;
-      }
-      prevBalances.set(p.id, p.balance);
-    });
-    if (gained && !lost) playMoneyGained();
-    else if (lost && !gained) playMoneyLost();
-
     // Log-line sounds.
     const newest = (state.log || [])[0];
     const prev = lastLogRef.current;
@@ -177,7 +157,6 @@ function App() {
     if (newest.includes("completed a trade.")) playTradeAccepted();
     else if (newest.includes("declined") && newest.includes("trade offer")) playTradeDeclined();
     else if (newest.includes(" bought ")) playBoughtTile();
-    else if (newest.includes("auction")) playAuctionStart();
     else if (newest.includes("mortgaged")) playMortgage();
     else if (newest.includes("unmortgaged")) playMortgage();
     else if (newest.includes("built")) playBuild();
