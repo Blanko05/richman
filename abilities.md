@@ -281,3 +281,34 @@ Hostile Takeover:
     `primeAudio()` first creates the shared `AudioContext`, via
     `preloadAllClips()`. Don't hand-roll a separate preload call per sound;
     just add the `makeClipPlayer(...)` export and this happens for free.
+- **Any tile-level standing-icon overlay (rendered inside `ClassicTile`,
+  a sibling of `.cv2-body`) hit two real bugs building Barricade's
+  `barricaded` icon — check for both before shipping the next one
+  (Hostile Takeover's crown/lock icon is the same shape of feature, so
+  both are likely to recur there specifically):**
+  1. **Left/right tile rotation.** `.cv2-body` itself rotates 180° on
+     `.cv2-side-left`/`.cv2-side-right` (so its text reads outward along
+     the rim), and every other icon on those edges follows suit
+     (`cv2-building-icon`: ±90°, `cv2-icon-center`: 90°). A brand-new icon
+     added without its own `.cv2-side-left .your-icon` /
+     `.cv2-side-right .your-icon` rotation rule will render sideways or
+     upside-down the first time it lands on a left/right tile — it won't
+     show up testing only top/bottom tiles. See `.cv2-barricade-icon`'s
+     own left/right rules (Pass 51) for the pattern — pick a rotation
+     angle that matches what the icon is actually depicting (Barricade
+     used ±90°, matching the building-icon convention, since a "wall"
+     reads better perpendicular to the rim than lying flat).
+  2. **The Chromium layout-cache bug.** Any sibling element inside
+     `.cv2-tile` appearing/disappearing (mortgaged state, house count, the
+     barricade icon, Detonate's reticle/blast) can leave `.cv2-body`'s own
+     rotated/vertical-writing-mode text visually "stuck" mid-tile until a
+     full reload — a real Chromium bug, not anything wrong in the CSS
+     itself (see the fix comment on `.cv2-body`'s own `key={...}` in
+     `ClassicTile`). The fix is always the same: fold whatever boolean
+     controls your new icon's visibility into that same `key` string, so
+     React force-remounts `.cv2-body` the instant it changes, the same way
+     `mortgaged`/`houses`/`barricaded`/`detonating` already do. **Do this
+     for any new tile-level conditional render, not just an icon** —
+     skipping it doesn't fail loudly, it just leaves a stale-looking tile
+     until someone happens to refresh, which is exactly what made it easy
+     to miss the first two times.
