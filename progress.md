@@ -9,6 +9,500 @@ in the same pass.
 
 ---
 
+## Pass 54 — 2026-07-12 — Detonate's alarm phase gets a scanning crosshair that sweeps the board and locks onto the target
+
+**Goal:** direct follow-up to Pass 53, entirely the user's own direction
+-- fill the (now 8s) alarm phase with a roaming crosshair icon that
+sweeps around the board while the siren/flash plays, then converges onto
+the actual target tile right at the end, handing off into the existing
+glow/reticle/blast sequence.
+
+**What was done (assets):** user supplied `crossair.png` at the repo
+root; copied into `client/public/crossair.png` per the established
+convention.
+
+**What was done (client only -- no server changes, same reasoning as
+Pass 52/53: the whole sequence is cosmetic, driven entirely off the
+existing detonateSeq/lastDetonate broadcast):**
+- `BoardClassic.jsx`: new `DetonateCrosshairIcon` component -- a single
+  board-wide overlay icon (not a per-player entry, unlike `TokenLayer`),
+  positioned the same left/top-percentage way a token is, with
+  `--glide-ms`/`--glide-ease` set per-hop so the same CSS-transition trick
+  `PlayerToken` already uses for a real move's glide works here for a
+  fake one. New `detonateCrosshairPos` state (`{ tileId, glideMs,
+  glideEase } | null`).
+- The existing `detonateSeq` effect (Pass 52/53) now also drives the
+  crosshair: a burst of fast constant-speed hops (`HOP_MS` each) around
+  the board perimeter starting from the caster's own current tile
+  (`visualPositions.get(casterId)`, falling back to tile 0), for
+  `SCAN_MS` (`ALARM_MS - LOCK_MS`), followed by one slower eased-out
+  glide (`LOCK_MS` = 1s) straight to the real target -- timed so the two
+  durations always sum to exactly `ALARM_MS`, landing the crosshair on
+  the target the instant the alarm phase ends and the glow phase begins.
+  Cleared the moment the blast phase starts (the burst/reticle take over
+  the "something's happening here" job from there).
+- `classicVintage.css`: `.cv2-detonate-crosshair` -- a continuously
+  spinning icon (a "scanning" read) with its centering `transform` baked
+  into the spin keyframe itself rather than a separate static rule (same
+  split `cv2-token`'s own `--bus-scale` transform already needed, since
+  `animation` fully owns `transform` on whatever it's applied to).
+  z-index 42 -- below `TokenLayer` (50, tokens always win) but above
+  ordinary tile content, same tier as the Curse tendril it's a JSX
+  sibling of.
+- `visualPositions` deliberately left out of the effect's own dependency
+  array (documented inline) -- it changes on every player's move, and
+  including it would restart this entire ~9.5s sequence, canceling every
+  in-flight timer, the moment anyone else took a turn while Detonate's
+  own animation was still playing. `board.length` was added instead
+  (harmless, matches `wreckingTourSeq`'s own effect precedent) since it
+  never actually changes mid-game.
+
+**Why these calls:** kept the crosshair's scan-then-lock timing entirely
+self-contained within the existing `detonateSeq` effect (one shared
+cleanup array) rather than a second independent effect, since it's fully
+coupled to the same alarm-phase timing the siren/board-pulse already use
+-- splitting it out would've meant either duplicating `ALARM_MS`/timing
+math or threading it between two effects for no real benefit.
+
+**State at end of pass:** server `npm test` 171/171 (unaffected, zero
+server files touched). Client `vite build` clean; `oxlint` gained one new
+warning (missing `visualPositions` dependency) on top of the 4
+pre-existing ones -- deliberate and documented inline, not a bug (see
+above). Not visually verified by the assistant per
+[[feedback-verification-approach]] -- user to cast Detonate and confirm
+the crosshair actually reads as "searching" during the alarm phase,
+converges cleanly onto the target right as the glow phase kicks in (not
+early, not late), and doesn't visually clash with the board-wide red
+pulse it's sweeping across.
+
+---
+
+## Pass 53 — 2026-07-12 — Detonate becomes a real showpiece: siren + board alarm + tile glow + exaggerated reticle/blast
+
+**Goal:** follow-up to Pass 52, entirely the user's own direction —
+Detonate should be one of the highlights of the game, not just another
+quick ability flash. Asked for the sequence explicitly: screen/board
+pulses red with a siren for a full 8 seconds, then the tile glows red,
+then an exaggerated targeting reticle, then an exaggerated explosion --
+the 8s alarm duration was a specific follow-up tweak within the same ask
+(started shorter, then extended once the shape of the sequence was in
+place).
+
+**What was done (assets):** user supplied `siren.mp3` at the repo root
+(a ~15s air-raid-style loop); copied into `client/public/sounds/siren.mp3`
+per the established convention.
+
+**What was done (client only -- no server changes, since the whole
+sequence is purely cosmetic and detonateSeq/lastDetonate from Pass 52
+already carries everything needed):**
+- `client/src/sfx.js`: new `playSirenAlarm(durationSec = 8)`. Only the
+  first 8s of the 15s clip is ever used, not the whole thing -- schedules
+  an explicit `AudioBufferSourceNode.stop()` at that point with a short
+  gain fade-out just before it, rather than a hard cut. Registered into
+  the module's `registeredClipSrcs` directly (not via `makeClipPlayer`,
+  which doesn't support the custom stop/fade logic this needs) so it
+  still participates in the existing eager-preload pipeline.
+- `BoardClassic.jsx`: the original two-phase reticle-then-blast sequence
+  (Pass 52) is now four phases, all still sequenced locally off the one
+  `detonateSeq` bump (absolute delays from `now`, one shared cleanup
+  array -- same pattern as before, more load-bearing now given how much
+  longer the whole sequence runs): **alarm** (8s, siren + the board
+  pulsing red on a repeating 0.5s beat, new `detonateAlarm` state) →
+  **glow** (~450ms, the target tile building up a hot red glow, new
+  `detonateGlowTileId` state) → **reticle** (~300ms, bigger/snappier than
+  before) → **blast** (~750ms, exaggerated). Total sequence is now ~9.5s.
+- `classicVintage.css`: the alarm pulse keyframe switched from a fixed
+  3-beat count to `infinite` (JS cuts the class off at exactly 8000ms
+  regardless of where mid-beat that lands -- simpler than computing how
+  many 0.5s beats fit evenly into 8s, and a rapid alternating flash reads
+  fine cut off at any point). The reticle got a bigger overshoot and
+  thicker border; the blast got its own dedicated squash-and-wobble tile
+  keyframe (`cv2-tile-detonate-slam`, no longer reusing Barricade's slam
+  -- this one specifically needed to read as bigger, so it earned its own
+  rather than forcing Barricade's to flex for both) plus a camera-flash
+  beat and a bigger burst ring (8x scale → 11x). Crumbling house/hotel
+  icons unchanged from Pass 52.
+
+**Why these calls:** kept `boom.mp3`/the crumbling-icon logic/the core
+`detonateSeq` broadcast entirely untouched from Pass 52 -- this pass is
+additive staging in front of and around the existing payoff, not a
+rebuild of it. The siren's own stop-early handling (rather than asking the
+user to trim the file) keeps the asset-sourcing convention simple (drop
+the real file, let the code decide how much of it to use) instead of
+pushing audio editing back onto the user.
+
+**State at end of pass:** server `npm test` 171/171 (unaffected, zero
+server files touched this pass). Client `vite build` clean, `oxlint`
+unchanged (same 4 pre-existing warnings). Not visually verified by the
+assistant per [[feedback-verification-approach]] -- user to cast Detonate
+and confirm the full ~9.5s sequence reads as intended: the 8s alarm pulse
+doesn't feel like it drags, the siren cuts off cleanly (no audible hard
+stop) rather than continuing
+to play out.
+
+---
+
+## Pass 52 — 2026-07-12 — Detonate gets a real cast/payoff animation (third from abilities.md's brainstorm table)
+
+**Goal:** third ability picked from abilities.md's brainstorm table.
+Detonate had zero client-side representation before this pass.
+
+**Planned before writing code:** confirmed Detonate is structurally
+simpler than Barricade/Curse — targeting and resolution happen in one
+synchronous server call (`wrecker.js`'s `active()`), so there's no real
+gap in time between a "cast" and its "payoff" the way Barricade/Curse
+both have, and the ability has no standing state at all per the
+brainstorm table (an instant effect). That meant only **one** new
+broadcast pair was needed, not two. Also checked what assets were
+actually necessary before asking for any: the crosshair reticle, the
+explosion burst, and the crumbling house/hotel icons are all buildable
+from existing icons (`house.svg`/`hotel.svg`, already in `/icons/`) and
+CSS/SVG alone — only the boom sound genuinely benefited from a real asset
+(a convincing explosion needs noise texture a simple oscillator can't
+cheaply fake, unlike Curse's tone-based drain), confirmed with the user
+via `AskUserQuestion` before starting.
+
+**What was done (assets):** user supplied `boom.mp3` at the repo root;
+copied into `client/public/sounds/boom.mp3` per the established
+convention.
+
+**What was done (server):**
+- `Room.js`: new `detonateSeq`/`lastDetonate` pair
+  (`{ casterId, targetId, tileId, levelsRemoved, forcedMortgage }`),
+  added to `toState()`/`toSnapshot()`/`fromSnapshot()` alongside the
+  existing ability broadcast fields.
+- `wrecker.js`: bumps the new pair once per successful `active()` call,
+  covering both branches (a real demolish and the empty-lot
+  forced-mortgage case) — not on a rejection. `levelsRemoved` is captured
+  before `owned.houses` is zeroed, specifically because the client needs
+  that count and `owned.houses` is already 0 by the time this same
+  broadcast reaches it.
+- `wrecker.test.js`: 3 new tests — demolishing bumps the pair with the
+  right shape, a forced mortgage bumps it too (`forcedMortgage: true`,
+  `levelsRemoved: 0`), and a rejected attempt (already mortgaged) does NOT
+  bump it.
+
+**What was done (client):**
+- `client/src/sfx.js`: new `playExplosion` (`makeClipPlayer("/sounds/boom.mp3")`).
+- `BoardClassic.jsx`: sequences the whole cast+payoff locally off the
+  single `detonateSeq` bump — a brief fire-orange targeting-lock reticle
+  (`detonateReticleTileId`, ~220ms) hands off to the blast
+  (`detonateBlast`): the shared `boardShaking` flag (reused from
+  Barricade rather than a second flag, since visually it's the same
+  effect), the boom sound, a tile squash-pop (reusing Barricade's own
+  slam keyframe rather than a near-identical third one), a fire-colored
+  burst ring, and crumbling house/hotel icons sourced from
+  `lastDetonate.levelsRemoved` (not live `owned.houses`, which is already
+  0). `ClassicTile`'s remount key (the mortgaged/houses/barricaded
+  Chromium layout-cache workaround, see Pass 48/49) extended to include
+  the reticle/blast flags too, same reasoning as barricaded before it.
+- No new image preloads needed — `house.svg`/`hotel.svg` are pre-existing
+  assets already used by the building badge, not new art.
+
+**Why these calls:** confirmed the simpler broadcast shape (one pair, not
+two) by reading `wrecker.js` before writing any server code, rather than
+assuming Detonate would need the same shape as Curse. The boom-sound
+asset question was asked up front via `AskUserQuestion` rather than
+defaulting to a synthesized attempt and finding out later it fell flat.
+
+**State at end of pass:** server `npm test` 171/171 (3 new). Client `vite
+build` clean, `oxlint` unchanged (same 4 pre-existing warnings, none
+new). Not visually verified by the assistant per
+[[feedback-verification-approach]] — user to cast Detonate on both a
+developed property (confirm the reticle, burst, and the right number of
+crumbling house/hotel icons) and an empty lot (confirm the forced-mortgage
+case skips the crumble but still bursts/shakes/booms).
+
+---
+
+## Pass 51 — 2026-07-12 — Hide the dead "Pay $50" button for Z in the Holding Pen
+
+**Goal:** user-reported bug (screenshot) — Z, sitting in the Holding Pen at
+the start of his turn, still saw a "Pay $50" button alongside Roll Dice,
+but clicking it did nothing.
+
+**Root cause:** `Room.js`'s `payToLeaveHolding` always rejects Z
+specifically (`player.character === "Z"` → `"The Enforcer can't buy their
+way out of the Holding Pen"`, his permanent drawback per characters.md —
+unconditional, not tied to whether Curse has ever been cast). The client's
+Holding Pen action row (`BoardClassic.jsx`) rendered the button for every
+player regardless of character, and the `socket.emit("payToLeaveHolding")`
+call had no ack callback to surface that rejection with — so for Z
+specifically, the button was not just pointless but silently broken on
+click, with nothing on screen explaining why.
+
+**What was done:** wrapped the button in `me.character !== "Z"` so it
+doesn't render for him at all, rather than adding ack-error handling to a
+button that can never succeed for this one character — Roll Dice and (if
+he's holding one) the Wasta card button are still both there, his actual
+two real options.
+
+**State at end of pass:** server `npm test` 168/168 (unaffected, no server
+changes — the rejection itself was already correct and already tested).
+Client `vite build` clean. Not visually verified by the assistant per
+[[feedback-verification-approach]] — user to confirm Z's Holding Pen
+screen now only shows Roll Dice (+ Wasta if he has the card), with no
+Pay $50 at all.
+
+---
+
+## Pass 50 — 2026-07-12 — Curse gets a real cast/standing/payoff animation (second from abilities.md's brainstorm table)
+
+**Goal:** second ability picked from abilities.md's brainstorm table, per
+the user's own priority. Curse had zero client-side representation before
+this pass, same starting point Barricade had.
+
+**Planned before writing code:** unlike Barricade, `Room.activeCurses` is a
+**list** (Copy Cat can stack an independent second curse), so Barricade's
+cheap "diff the object against the previous render" trick for the cast
+moment couldn't carry over — this genuinely needed new server broadcast
+fields, not just client wiring. Also found while reading `settleEarning`
+before planning: a cursed target's own balance never actually changes
+across a broadcast (it's credited then clawed back in the same synchronous
+tick), so the existing generic balance-flash (Pass 33) silently never
+fires for them — the payoff moment needed to be the *only* visible
+evidence a drain happened, not a flourish on top of an existing one.
+Presented this plan to the user first and confirmed three concrete
+choices via `AskUserQuestion` before implementing: the skull/chain
+standing-indicator icon would be user-supplied (not an inline SVG), the
+drain sound would be synthesized (not a recorded clip), and the cast
+tendril would be pure CSS/SVG (not a supplied asset).
+
+**What was done (assets):** user supplied `reaper.png` at the repo root;
+copied into `client/public/reaper.png` per the established convention
+(root assets never referenced directly from code).
+
+**What was done (server):**
+- `Room.js`: two new broadcast pairs, both added to `toState()`/
+  `toSnapshot()`/`fromSnapshot()` alongside the existing `barricade*` ones
+  — `curseCastSeq`/`lastCurseCast` (`{ targetId, casterId }`, bumped in
+  `enforcer.js`'s `active()`) and `curseDrainSeq`/`lastCurseDrain`
+  (`{ targetId, casterId, amount }`, bumped inside `settleEarning`
+  whenever a redirect actually fires — not once per curse, once per actual
+  transfer).
+- `enforcer.test.js`: 3 new tests covering both new fields — cast bumps
+  `curseCastSeq`, an actual redirect bumps `curseDrainSeq`, and an earning
+  event on an uncursed player does NOT bump it.
+
+**What was done (client):**
+- `client/src/sfx.js`: new `playCurseDrain` — two detuned sawtooth
+  oscillators sweeping downward together (a "siphon" read, distinct from
+  `playMoveSwoosh`'s single smooth sweep), per the user's synthesized-tone
+  choice.
+- `PlayerToken.jsx`: `isCursed` (persistent skull badge, sibling of
+  `cv2-token-inner` so it's unaffected by that element's own bob/floating/
+  celebrate/snap animations) and `isCurseDraining` (momentary purple-red
+  flash on `cv2-token-face`, same "target the face not the inner element"
+  reasoning as Barricade's snap).
+- `BoardClassic.jsx`: new `CurseTendril` component — an SVG line drawn
+  between the caster's and target's current `visualPositions` (so it
+  tracks a token still mid-glide, same coordinate system `TokenLayer`
+  already uses), animated draw-in/fade-out, rendered as a board-wide
+  overlay just below `TokenLayer`'s own z-index. Two new effects mirror
+  Barricade's cast/payoff shape: `prevCurseCastSeqRef` sets a one-shot
+  `curseCastEvent` (drives the tendril + a purple-red board vignette,
+  `cv2-board--curse-dim`) and `prevCurseDrainSeqRef` plays the drain sound
+  + sets a one-shot `curseDrainTargetId`. Unlike Barricade's payoff, this
+  one needed **no landing-sync delay** — a redirect isn't tied to any
+  specific move (rent, cards, bank payouts all trigger it), so there's no
+  glide to wait on; it plays immediately off the seq bump. `reaper.png`
+  gets the same eager `new Image()` preload `barrier.png` already has.
+- `PlayersPanel.jsx`: the "row" half of the standing indicator (a pulsing
+  skull badge next to the cursed player's name, `activeCurses.some(c =>
+  c.targetId === p.id)`) and the payoff's target-side flash (a distinct
+  "💀 -$X" under their balance chip, own `curseFlash` state/effect
+  mirroring the existing balance-flash's `!tokenMoving` gate) — this is
+  the piece that fills the "never actually changes" gap found during
+  planning.
+
+**Why these calls:** the plan (asset sourcing, sound synthesis, tendril
+technique) was reviewed and confirmed by the user before any code was
+written, per the established workflow from Barricade. The
+sidebar-row indicator (not just a board token badge) was a deliberate
+addition beyond a literal port of Barricade's pattern, justified by Curse
+targeting a *player* rather than a *tile* — the brainstorm table already
+called this out ("...pinned on the cursed player's **row** + token").
+
+**State at end of pass:** server `npm test` 168/168 (3 new). Client `vite
+build` clean, `oxlint` unchanged (same 4 pre-existing warnings, none new).
+Not visually verified by the assistant per [[feedback-verification-approach]]
+— user to cast Curse, confirm the tendril/vignette read right, check both
+standing-indicator surfaces (token + sidebar row), and trigger a redirect
+(e.g. land the cursed player on a rent tile) to confirm the drain
+sound/flash lands on the target's side specifically, not just the
+caster's ordinary "+X".
+
+---
+
+## Pass 49 — 2026-07-11 — Barricade follow-up: turn-lifetime standing icon, landing-synced payoff, left/right rotation, and a general asset-preload gap
+
+**Goal:** four user-reported issues after trying Pass 48's Barricade work
+live: (1) the wall icon disappeared the instant the barricade was sprung
+instead of lasting through the rest of that player's turn, (2) the
+screen-shake/thud fired the instant the move broadcast arrived instead of
+when the token actually finished walking up to the tile, (3) the same
+rotated-text layout-cache bug that mortgage once hit (Pass history, see
+`BoardClassic.jsx`'s existing remount-key comment) resurfaced on left/right
+tiles once the barrier icon started appearing/disappearing as a sibling,
+and (4) a general observation that ability sounds/icons feel slow to
+trigger the first time, suspected to be a lazy-loading issue.
+
+**What was done (#1 — standing icon lifetime):**
+- `Room.js`'s `applyBarricade` nulls `this.barricade` the instant the stop
+  is computed (same broadcast as the move itself, unchanged, not a
+  gameplay bug) — so the icon needed a client-side reason to keep showing
+  past that. New `barricadeLingerTileId` state in `BoardClassic.jsx`, set
+  the moment the stop event arrives (`barricadeSeq` effect, immediate — no
+  reason to delay the icon's persistence the way the payoff below needs
+  delaying) and cleared only once `turnIndex` actually advances (new
+  dedicated effect). `ClassicTile`'s `barricaded` prop now reads
+  `room.barricade?.tileId === tile.id || barricadeLingerTileId === tile.id`.
+
+**What was done (#2 — payoff timing):**
+- Moved the shake/thud/snap trigger out of its own standalone `barricadeSeq`
+  effect and into the generic move-detection effect, which already computes
+  each move's real resolved legs (glideMs per leg) to drive the token's own
+  glide. A new `barricadeJustHappened` check there schedules the payoff at
+  `startDelay + sum(leg glideMs)` — the actual wall-clock moment that
+  specific move's glide finishes — instead of firing on the broadcast itself,
+  which lands before the glide has even started.
+
+**What was done (#3 — left/right rotation + layout bug):**
+- `.cv2-barricade-icon` gets the same `rotate(90deg)`/`rotate(-90deg)`
+  treatment on `.cv2-side-left`/`.cv2-side-right` that `cv2-building-icon`
+  already has, so the wall reads as facing the right way on every edge, not
+  just top/bottom.
+- The barrier icon's own mount/unmount (a sibling of `.cv2-body`, same as
+  the building badge) turned out to be a new trigger for the same Chromium
+  layout-cache bug the mortgaged/houses remount-key fix (`key={...}` on
+  `.cv2-body`, see that comment) was written for. Folded `barricaded` into
+  that same key (`${mortgaged}-${houses}-${barricaded}`) rather than
+  inventing a second fix for the same underlying issue.
+
+**What was done (#4 — asset preload gap, confirmed real, not just a
+suspicion):**
+- `client/src/sfx.js`: every sound was fully lazy before this pass —
+  `loadClipBuffer` only ever fetched+decoded a clip the first time it
+  actually played, so whichever sound happened to be a player's first
+  encounter with it (often an ability payoff many turns in, not one of the
+  early/frequent sounds like the dice throw) paid that latency right at the
+  moment it was supposed to play. `makeClipPlayer` now registers every
+  `src` into `registeredClipSrcs`; new `preloadAllClips()` walks that list
+  and kicks off every clip's fetch+decode in parallel the first time
+  `primeAudio()` actually creates the shared `AudioContext` (can't preload
+  any earlier — decoding needs a real context, and the browser autoplay
+  policy blocks creating one before a user gesture). Nothing about how a
+  clip plays changed, only how early its decode work starts — `makeClipPlayer`'s
+  returned player still awaits the same cached promise either way.
+- `client/src/components/BoardClassic.jsx`: `barrier.png` gets the same
+  eager `new Image()` preload the three corner-tile icons already have —
+  it's a new-enough asset that its very first render can land at any
+  arbitrary point well into a game (whenever Barricade first gets cast),
+  unlike the corner icons which always render on the board's first paint,
+  so without this it would pop in visibly late the first time.
+
+**Why these calls:** #1/#2 are both timing bugs traceable to the same root
+tension — Room.js's broadcast-driven state (`barricade`/`barricadeSeq`)
+reflects the server's-eye-view instant, not the client's own animation
+timeline — so both fixes work by giving the client its own local notion of
+"still relevant" (a lingering tile id, a computed landing delay) layered on
+top of the raw broadcast instead of reacting to the broadcast directly.
+#3 was root-caused by recognizing it as a recurrence of a previously-fixed
+bug class rather than treated as new — the fix is the same shape as a
+result. #4 was confirmed (not just taken on faith) by reading
+`loadClipBuffer`/`makeClipPlayer` before writing anything — genuinely fully
+lazy, exactly as suspected.
+
+**State at end of pass:** server `npm test` 165/165 (unaffected — every
+change this pass is client-only). Client `vite build` clean. Not visually
+verified by the assistant per [[feedback-verification-approach]] — user to
+re-confirm all four against a live Barricade cast: icon lasting the whole
+turn, shake/thud landing on arrival, correct left/right orientation with no
+text jump, and a snappier first-ever thud/icon appearance.
+
+---
+
+## Pass 48 — 2026-07-11 — Barricade gets a real cast/standing/payoff animation (first from abilities.md's brainstorm table)
+
+**Goal:** first ability picked from [abilities.md](abilities.md)'s
+brainstorm table, per the user's own priority for that doc — Barricade,
+D's active, had zero client-side representation before this pass (armed,
+sprung, or expired, only the game log ever mentioned it).
+
+**Investigation before building:** abilities.md's own "infra already
+available" section claimed Barricade/Curse/Hostile Takeover had "no
+equivalent" to Wrecking Tour's `wreckingTourSeq`/`lastWreckingTour`
+room-wide broadcast pair. Checked `Room.js` before taking that at face
+value — turned out to be only half true: `barricade`/`activeCurses`/
+`hostileTakeover` are all already pushed straight through in `toState()`/
+`toSnapshot()` (for reasons unrelated to client animation), so a *standing*
+indicator for any of the three needs zero server changes — only the
+one-shot cast/payoff *event* signal was actually missing, and even that
+was half-done for Barricade specifically (`barricadeSeq`/
+`lastBarricadeStop` already existed, bumped by `applyBarricade` when
+someone actually gets stopped — see Pass 47 — just never consumed
+client-side). Corrected abilities.md's framing to match once this was
+confirmed, rather than leaving the stale "no equivalent" claim next to the
+now-working counterexample.
+
+**What was done (assets):** user supplied `barrier.png` (a wall/barrier
+icon) and `thud.mp3` (impact sound) at the repo root; copied into
+`client/public/` (`barrier.png`, `sounds/thud.mp3`) per the user's stated
+convention — root-provided assets are never referenced directly from
+code, only their `client/public/` copy — matching the existing
+`phone-call.png`/`phone-call-fail.png` precedent (Pass 43).
+
+**What was done (client, no server changes at all):**
+- `client/src/sfx.js`: new `playBarricadeThud` (`makeClipPlayer`, the
+  standard pattern). Per explicit user instruction, wired to fire off the
+  structured `barricadeSeq`/`lastBarricadeStop` broadcast, not a game-log
+  string match — the user flagged the existing log-string-match sound
+  dispatch (documented in `sounds-added.md`) as something to eventually
+  centralize; this pass doesn't do that broader refactor, but makes sure
+  Barricade's own sound doesn't add to that pile.
+- `BoardClassic.jsx` / `classicVintage.css`:
+  - **Standing indicator**: `barrier.png` rendered on whichever tile
+    `room.barricade.tileId` currently points at (`ClassicTile`'s new
+    `barricaded` prop), with an idle pulsing glow. Reads straight off room
+    state — no seq involved, disappears the instant `Room.js` nulls
+    `this.barricade` (sprung or the caster's own next turn).
+  - **Cast moment**: board dims briefly + the targeted tile "slams" (a
+    sharp squash/settle) with a dust-puff ring. New `prevBarricadeRef`
+    effect diffs `room.barricade`'s own identity (`tileId`+`casterId`)
+    against the previous render instead of adding a new seq field — enough
+    to tell a genuinely new cast apart from the same barricade re-arriving
+    on an unrelated broadcast, since only a single object is ever in play
+    (this trick doesn't generalize to Curse's list-shaped `activeCurses`,
+    noted in abilities.md for whoever picks that one up next).
+  - **Payoff moment**: a real screen-shake (`cv2-board--shake`) + the new
+    thud sound + a red flash/squash "snap" on the stopped player's own
+    token (`PlayerToken`'s new `isBarricadeSnap` prop, animates
+    `.cv2-token-face` specifically rather than `.cv2-token-inner` so it
+    doesn't fight the glide's own floating/landing transforms, which live
+    on the inner element — same separation-of-concerns Wrecking Tour's
+    `--bus-scale` already established for the outer wrapper). New
+    `prevBarricadeSeqRef` effect, same shape as the existing
+    `prevWreckingTourSeqRef` one just below it in the file.
+
+**Why these calls:** confirmed with the user up front (before writing any
+code) that both the wall icon and thud sound would be supplied rather than
+improvised, and got explicit direction on two process points that will
+apply to every ability from here on, not just this one — asset handling
+(root → `client/public` only, never referenced from root) and sound
+wiring (structured state, not log-string matching) — both applied
+throughout this pass and captured in abilities.md for the next character.
+
+**State at end of pass:** server `npm test` 165/165 (unaffected — zero
+server files touched, confirmed deliberately since all the needed
+broadcast state already existed). Client `vite build` clean. Not visually
+verified by the assistant per [[feedback-verification-approach]] — user to
+arm a Barricade, watch the cast slam/dim, let another player spring it,
+and confirm the standing icon, screen-shake, thud, and token-snap all read
+right (including for a player who isn't the caster or the one who got
+stopped, since every piece here is broadcast room-wide by design).
+
+---
+
 ## Pass 47 — 2026-07-11 — Character ability bug fixes, a stuck-turn race condition, and cooldown/behavior tuning
 
 **Goal:** four reported ability bugs, one intermittent "End Turn button never

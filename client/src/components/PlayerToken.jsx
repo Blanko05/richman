@@ -1,6 +1,6 @@
 import { ICONS } from "../data/icons";
 
-export default function PlayerToken({ player, stackIndex, stackTotal, leftPct, topPct, glideMs, glideEase, isMoving, isLanding, justBought, isActiveTurn, isBusRiding }) {
+export default function PlayerToken({ player, stackIndex, stackTotal, leftPct, topPct, glideMs, glideEase, isMoving, isLanding, justBought, isActiveTurn, isBusRiding, isBarricadeSnap, isCursed, isCurseDraining }) {
   const wrapStyle = {
     "--c": player.color,
     "--i": stackIndex,
@@ -21,6 +21,8 @@ export default function PlayerToken({ player, stackIndex, stackTotal, leftPct, t
     isMoving && "cv2-token--floating",
     !isMoving && isLanding && "cv2-token--landing",
     justBought && "cv2-token--celebrate",
+    isBarricadeSnap && "cv2-token--barricade-snap",
+    isCurseDraining && "cv2-token--curse-drain",
   ].filter(Boolean).join(" ");
   const innerStyle = { "--delay": `${(stackIndex * 0.3).toFixed(2)}s` };
 
@@ -51,6 +53,16 @@ export default function PlayerToken({ player, stackIndex, stackTotal, leftPct, t
           </span>
         )}
       </span>
+      {/* Z's Curse standing indicator -- sibling of cv2-token-inner (not
+          nested inside it) so it never gets swept up in the inner
+          element's own bob/floating/celebrate/barricade-snap animations,
+          which all drive `transform`/`filter` on that element specifically.
+          Persists for as long as this player is in room.activeCurses (see
+          TokenLayer's isCursed) -- no seq/timing needed for this part,
+          same reasoning as Barricade's own standing icon. */}
+      {isCursed && (
+        <img src="/reaper.png" className="cv2-token-cursed-badge" alt="" />
+      )}
     </span>
   );
 }

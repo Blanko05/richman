@@ -3091,6 +3091,26 @@ select {
 .badge-dc       { background: #3498db;   color: #fff; }
 .badge-debt     { background: #c0392b;  color: #fff; }
 
+/* Z's Curse standing indicator, sidebar half -- see PlayerToken.jsx's
+   cv2-token-cursed-badge for the board-token half of the same signal. Sized
+   against .panel-player-dot (30px) rather than the plain .panel-badge text
+   pills alongside it, since this is an image badge, not a label. */
+.panel-cursed-icon {
+  width: 14px;
+  height: 14px;
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.6));
+  animation: panel-cursed-icon-pulse 1.8s ease-in-out infinite;
+}
+/* Own keyframe rather than reusing classicVintage.css's
+   cv2-barricade-idle-pulse -- that file is only ever loaded via
+   BoardClassic.jsx's own import, and this component (PlayersPanel) has no
+   guarantee it's rendered alongside it, so App.css needs its own copy
+   rather than an implicit cross-file dependency. Same shape, though. */
+@keyframes panel-cursed-icon-pulse {
+  0%, 100% { filter: drop-shadow(0 1px 2px rgba(0,0,0,0.6)) drop-shadow(0 0 0 rgba(139,26,26,0)); }
+  50%      { filter: drop-shadow(0 1px 2px rgba(0,0,0,0.6)) drop-shadow(0 0 5px rgba(139,26,26,0.9)); }
+}
+
 .panel-turn-countdown {
   display: flex;
   align-items: center;
@@ -3143,6 +3163,18 @@ select {
   15%  { opacity: 1; }
   75%  { opacity: 1; }
   100% { opacity: 0; }
+}
+
+/* Z's Curse payoff, target side (PlayersPanel.jsx's curseFlash) -- reuses
+   .balance-flash's own positioning/timing (same element, an extra class)
+   but needs its own color/weight: the cursed target's balance never
+   actually moves (see Room.js's settleEarning), so plain green/red -- which
+   both read as "your balance changed by this much" -- would be misleading
+   here. Deep purple-red instead of .balance-flash.negative's plain red, so
+   it doesn't get mistaken for an ordinary loss either. */
+.curse-drain-flash {
+  color: #8b1a4a;
+  text-shadow: 0 0 6px rgba(139, 26, 74, 0.6);
 }
 [data-theme="dark"] .panel-player-balance {
   color: #d4c860;

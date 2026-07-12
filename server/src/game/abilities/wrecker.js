@@ -54,12 +54,20 @@ export const wrecker = {
       owned.mortgaged = true;
       room.pushLog(`${caster.name} used Detonate on ${tile.name}, forcing it into mortgage since ${target.name} had nothing built there.`);
       room.triggerPassive("onMortgage", { player: target, tileId });
+      // Client-animation broadcast only (see Room.js's detonateSeq comment)
+      // -- one event covers both the crosshair-flash cast moment and the
+      // payoff, since (unlike Barricade/Curse) there's no gap in time
+      // between them to justify two separate seq pairs.
+      room.detonateSeq += 1;
+      room.lastDetonate = { casterId: caster.id, targetId: target.id, tileId, levelsRemoved: 0, forcedMortgage: true };
       return { ok: true, levelsRemoved: 0, forcedMortgage: true };
     }
     const levelsRemoved = owned.houses;
     owned.houses = 0;
     room.pushLog(`${caster.name} used Detonate on ${tile.name}, destroying ${levelsRemoved} level(s) owned by ${target.name}.`);
     room.triggerPassive("onDemolish", { player: target, tileId, levelsRemoved });
+    room.detonateSeq += 1;
+    room.lastDetonate = { casterId: caster.id, targetId: target.id, tileId, levelsRemoved, forcedMortgage: false };
     return { ok: true, levelsRemoved };
   },
 };

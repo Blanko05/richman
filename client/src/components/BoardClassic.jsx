@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { socket } from "../socket";
-import { playMoveSwoosh, playSellBuilding, primeAudio } from "../sfx";
+import { playMoveSwoosh, playSellBuilding, playBarricadeThud, playCurseDrain, playExplosion, playSirenAlarm, primeAudio } from "../sfx";
 import Dice from "./Dice";
 import PlayerToken from "./PlayerToken";
 import PropertyCardDetail from "./PropertyCardDetail";
@@ -36,6 +36,27 @@ Object.values(CORNER_ICON_SRC).forEach((src) => {
   const img = new Image();
   img.src = src;
 });
+
+// D's Barricade standing indicator (see ClassicTile's `barricaded` prop):
+// unlike the corner icons above, this one's first-ever render can happen at
+// any arbitrary point well into a game (whenever Barricade first gets
+// cast), not on the board's own first paint -- without this same eager
+// preload, it would visibly pop in a beat late the first time D actually
+// uses the ability, since the browser only starts fetching an <img> once
+// it's actually mounted.
+const barrierImg = new Image();
+barrierImg.src = "/barrier.png";
+
+// Z's Curse standing indicator (the token badge, see PlayerToken.jsx) --
+// same reasoning as barrierImg above: its first-ever render can land at
+// any arbitrary point well into a game, not the board's first paint.
+const reaperImg = new Image();
+reaperImg.src = "/reaper.png";
+
+// Y's Detonate alarm-phase scanning crosshair (see DetonateCrosshairIcon
+// below) -- same reasoning as barrierImg/reaperImg above.
+const crossairImg = new Image();
+crossairImg.src = "/crossair.png";
 
 export function TreasureIcon() {
   return (
@@ -216,7 +237,7 @@ function HoldingCornerArt({ name, visitingLabel }) {
   );
 }
 
-function ClassicTile({ tile, owned, players, sideLen, onSelect, isSelected, targeting }) {
+function ClassicTile({ tile, owned, players, sideLen, onSelect, isSelected, targeting, barricaded, barricadeCasting, detonateGlow, detonateReticle, detonateBlast }) {
   const { id, name, price, amount, groupColor, type, visitingLabel } = tile;
   const { edge, row, col } = getLayout(id, sideLen);
   const hasIcon = type === "treasure" || type === "surprise" || type === "tax" || type === "transit" || type === "rest" || type in CORNER_ICON_SRC;
@@ -240,7 +261,7 @@ function ClassicTile({ tile, owned, players, sideLen, onSelect, isSelected, targ
 
   return (
     <div
-      className={`cv2-tile ${isCorner ? "cv2-corner" : `cv2-side-${edge}`}${type === "transit" ? " cv2-transit" : ""}${type === "rest" ? " cv2-rest" : ""}${isClickable ? " cv2-tile-clickable" : ""}${isSelected ? " cv2-tile-selected" : ""}${targeting ? " cv2-tile-targetable" : ""}`}
+      className={`cv2-tile ${isCorner ? "cv2-corner" : `cv2-side-${edge}`}${type === "transit" ? " cv2-transit" : ""}${type === "rest" ? " cv2-rest" : ""}${isClickable ? " cv2-tile-clickable" : ""}${isSelected ? " cv2-tile-selected" : ""}${targeting ? " cv2-tile-targetable" : ""}${barricadeCasting ? " cv2-tile--barricade-slam" : ""}${detonateGlow ? " cv2-tile--detonate-glow" : ""}${detonateBlast ? " cv2-tile--detonate-blast" : ""}`}
       style={{ gridRow: row, gridColumn: col, ...(!isCorner && ownerColor ? { background: ownerColor } : {}) }}
       onClick={isClickable ? (e) => onSelect(id, e.currentTarget, edge) : undefined}
     >
@@ -251,16 +272,20 @@ function ClassicTile({ tile, owned, players, sideLen, onSelect, isSelected, targ
         </div>
       )}
 
-      {/* Keyed on mortgaged/houses -- both are purely cosmetic sibling changes
-          elsewhere in this tile (the band appearing/disappearing, the
-          building badge appearing/disappearing) that don't touch cv2-body's
-          own box model at all, yet reliably left its rotated/vertical-
-          writing-mode text visually "stuck" mid-tile until a full page
-          reload recomputed it (a Chromium layout-cache bug, not anything
-          wrong in this CSS). Forcing React to unmount/remount this node
-          instead of patching it in place sidesteps the stale layout
-          entirely -- same effect a refresh has, without one. */}
-      <div key={`${!!owned?.mortgaged}-${houses}`} className={`cv2-body${hasIcon ? " cv2-body--icon" : ""}`}>
+      {/* Keyed on mortgaged/houses/barricaded/detonating -- all are purely
+          cosmetic sibling changes elsewhere in this tile (the band
+          appearing/disappearing, the building badge appearing/
+          disappearing, the barricade icon and Detonate's reticle/burst/
+          crumble overlays below appearing/disappearing) that don't touch
+          cv2-body's own box model at all, yet reliably left its rotated/
+          vertical-writing-mode text visually "stuck" mid-tile until a full
+          page reload recomputed it (a Chromium layout-cache bug, not
+          anything wrong in this CSS) -- barricaded/detonating were added
+          to this key for the same reason mortgaged/houses are here: it's
+          the same bug, a new trigger each time. Forcing React to unmount/
+          remount this node instead of patching it in place sidesteps the
+          stale layout entirely -- same effect a refresh has, without one. */}
+      <div key={`${!!owned?.mortgaged}-${houses}-${barricaded}-${!!detonateReticle}-${!!detonateBlast}`} className={`cv2-body${hasIcon ? " cv2-body--icon" : ""}`}>
         {type === "transit" ? (
           <div className="cv2-transit-layout">
             <span className="cv2-transit-name">{nameParts[0]}</span>
@@ -313,6 +338,46 @@ function ClassicTile({ tile, owned, players, sideLen, onSelect, isSelected, targ
           )}
         </div>
       )}
+
+      {/* Standing indicator: D's Barricade (see Room.js's this.barricade),
+          driven straight off room state -- no seq/broadcast plumbing needed
+          for this part, unlike the cast/payoff moments below, since it's
+          just "is this field currently non-null for this tile", already
+          pushed to every client via toState(). Cleared automatically the
+          instant Room.js nulls this.barricade (sprung or the caster's own
+          next turn), same as everything else driven straight off state. */}
+      {barricaded && (
+        <img src="/barrier.png" className="cv2-barricade-icon" alt="" />
+      )}
+
+      {/* Y's Detonate -- cast+payoff, one combined broadcast event (see
+          Room.js's detonateSeq comment: unlike Barricade/Curse there's no
+          real gap in time between targeting and resolution, so
+          BoardClassic.jsx just sequences the reticle then the blast
+          locally off a single seq bump instead of two). */}
+      {detonateReticle && <div className="cv2-tile-detonate-reticle" />}
+      {detonateBlast && (
+        <>
+          <div className="cv2-tile-detonate-burst" />
+          {/* Crumbling house/hotel icons -- sourced from
+              detonateBlast.levelsRemoved, NOT owned.houses, since
+              owned.houses is already reset to 0 by the same broadcast that
+              carries this event (see wrecker.js). A forced mortgage
+              (nothing was built) has nothing to crumble -- just the burst
+              above. */}
+          {!detonateBlast.forcedMortgage &&
+            Array.from({ length: detonateBlast.levelsRemoved }, (_, i) => (
+              <span
+                key={i}
+                className={`cv2-detonate-crumble${detonateBlast.levelsRemoved >= 5 ? " cv2-detonate-crumble--hotel" : ""}`}
+                style={{
+                  "--icon-url": `url(${detonateBlast.levelsRemoved >= 5 ? "/icons/hotel.svg" : "/icons/house.svg"})`,
+                  "--i": i,
+                }}
+              />
+            ))}
+        </>
+      )}
     </div>
   );
 }
@@ -326,7 +391,7 @@ function ClassicTile({ tile, owned, players, sideLen, onSelect, isSelected, targ
 // player always has exactly one current tile, in flight or not, so
 // stacking (stackIndex/stackTotal) works the same way whether a token is
 // sitting still or mid-glide through the tile it's passing.
-function TokenLayer({ players, sideLen, trackCenters, cellPct, holdingTileId, currentPlayerId, visualPositions, floatingIds, landingIds, celebratingIds, busRidingId }) {
+function TokenLayer({ players, sideLen, trackCenters, cellPct, holdingTileId, currentPlayerId, visualPositions, floatingIds, landingIds, celebratingIds, busRidingId, barricadeSnapId, activeCurses, curseDrainTargetId }) {
   // The Holding tile splits into two sub-zones -- everywhere else, all
   // occupants of a tile still share one shared "main" stack exactly as
   // before.
@@ -373,6 +438,9 @@ function TokenLayer({ players, sideLen, trackCenters, cellPct, holdingTileId, cu
             justBought={celebratingIds.has(p.id)}
             isActiveTurn={p.id === currentPlayerId}
             isBusRiding={busRidingId === p.id}
+            isBarricadeSnap={barricadeSnapId === p.id}
+            isCursed={activeCurses.some((c) => c.targetId === p.id)}
+            isCurseDraining={curseDrainTargetId === p.id}
           />
         ));
       })}
@@ -380,8 +448,65 @@ function TokenLayer({ players, sideLen, trackCenters, cellPct, holdingTileId, cu
   );
 }
 
+// Z's Curse cast moment: a dark tendril drawn straight from the caster's
+// current tile to the target's, board-wide overlay same as TokenLayer (not
+// nested in either tile, for the same clipping reason). Coordinates reuse
+// the exact same getLayout/trackCenters conversion TokenLayer uses, off
+// visualPositions rather than raw player.position, so the tendril's
+// endpoints track a token still mid-glide instead of snapping to its final
+// tile early. `event` is null whenever no cast is currently animating (see
+// BoardClassic's curseCastEvent state) -- this returns null itself in that
+// case rather than the parent conditionally mounting/unmounting it, so the
+// fade-out transition below actually has something to animate from.
+function CurseTendril({ event, sideLen, trackCenters, visualPositions }) {
+  if (!event) return null;
+  const casterEntry = visualPositions.get(event.casterId);
+  const targetEntry = visualPositions.get(event.targetId);
+  if (!casterEntry || !targetEntry) return null;
+  const casterLayout = getLayout(casterEntry.tileId, sideLen);
+  const targetLayout = getLayout(targetEntry.tileId, sideLen);
+  const x1 = trackCenters[casterLayout.col - 1];
+  const y1 = trackCenters[casterLayout.row - 1];
+  const x2 = trackCenters[targetLayout.col - 1];
+  const y2 = trackCenters[targetLayout.row - 1];
+  return (
+    <svg className="cv2-curse-tendril" viewBox="0 0 100 100" preserveAspectRatio="none">
+      <line x1={x1} y1={y1} x2={x2} y2={y2} />
+    </svg>
+  );
+}
+
+// Y's Detonate alarm phase: the roaming crosshair that sweeps the board
+// during the siren/flash before locking onto the actual target (user's
+// own request, Pass 54). `pos` is `{ tileId, glideMs, glideEase }` --
+// same shape as a single TokenLayer entry's own visualPositions value,
+// but this is one standalone icon, not a per-player map, so it's simpler
+// to just track directly rather than reusing TokenLayer's grouping logic.
+// glideMs/glideEase vary per hop (fast constant-speed steps while
+// scanning, then one slower eased-out glide for the final lock-on) so the
+// same left/top-transition trick PlayerToken already uses for a token's
+// own glide works here too, just driven by BoardClassic's own scan timer
+// chain instead of a real move.
+function DetonateCrosshairIcon({ pos, sideLen, trackCenters }) {
+  if (!pos) return null;
+  const { row, col } = getLayout(pos.tileId, sideLen);
+  return (
+    <img
+      src="/crossair.png"
+      alt=""
+      className="cv2-detonate-crosshair"
+      style={{
+        left: `${trackCenters[col - 1]}%`,
+        top: `${trackCenters[row - 1]}%`,
+        "--glide-ms": `${pos.glideMs}ms`,
+        "--glide-ease": pos.glideEase,
+      }}
+    />
+  );
+}
+
 export default function BoardClassic({ state, myId, tokenMoving, onTokenMovingChange, tileTargeting, onTileTarget }) {
-  const { board, ownership, players, lastRoll, turnIndex, rollSeq, jailSeq, jailedPlayerId, jailFromTileId, wreckingTourSeq, lastWreckingTour } = state;
+  const { board, ownership, players, lastRoll, turnIndex, rollSeq, jailSeq, jailedPlayerId, jailFromTileId, wreckingTourSeq, lastWreckingTour, barricade, barricadeSeq, lastBarricadeStop, activeCurses, curseCastSeq, lastCurseCast, curseDrainSeq, lastCurseDrain, detonateSeq, lastDetonate } = state;
 
   // Rim tracks (row 1 / row N / col 1 / col N) are wider than inner tracks so
   // tiles take up more of the board and the center shrinks. Tiles become
@@ -590,6 +715,53 @@ export default function BoardClassic({ state, myId, tokenMoving, onTokenMovingCh
   useEffect(() => {
     if (busRidingId && !movingIds.has(busRidingId)) setBusRidingId(null);
   }, [movingIds, busRidingId]);
+  // D's Barricade: cast-moment tile id (drives the slam+dust+dim effects,
+  // see the prevBarricadeRef effect further down), whole-board shake flag
+  // and the payoff's snapped-token id (both driven from inside the generic
+  // move-detection effect below, timed to the token's own glide -- see
+  // barricadeJustHappened there) -- all one-shot, self-clearing via their
+  // own setTimeout rather than any external "effect ended" signal, same
+  // shape as celebratingIds above.
+  const [barricadeCastTileId, setBarricadeCastTileId] = useState(null);
+  const [boardShaking, setBoardShaking] = useState(false);
+  const [barricadeSnapId, setBarricadeSnapId] = useState(null);
+  // Standing-indicator persistence: Room.js's applyBarricade nulls
+  // this.barricade the instant the stop is computed -- the same broadcast
+  // that carries the move itself -- so without this, the wall icon would
+  // vanish before the token has even finished walking up to it, and
+  // certainly before the stopped player's turn actually ends. Set the
+  // moment the stop event arrives (see the barricadeSeq-watching effect
+  // below) and held at that tileId until the turn actually advances (the
+  // turnIndex effect further down), independent of how long the glide or
+  // the payoff animation itself takes.
+  const [barricadeLingerTileId, setBarricadeLingerTileId] = useState(null);
+  // Z's Curse: cast-moment tendril event (see CurseTendril above, and the
+  // curseCastSeq effect further down) and the payoff's draining-token id
+  // (see PlayerToken's isCurseDraining) -- both one-shot, self-clearing via
+  // their own setTimeout, same shape as Barricade's own cast/payoff state.
+  // No linger-until-turn-ends equivalent needed here the way Barricade's
+  // standing icon has one -- Curse's standing indicator (the token/sidebar
+  // skull badge) reads straight off activeCurses, which Room.js itself only
+  // ever clears at the actual "their turn is over" moment (endTurn), not
+  // earlier the way barricade nulls immediately on spring.
+  const [curseCastEvent, setCurseCastEvent] = useState(null);
+  const [curseDrainTargetId, setCurseDrainTargetId] = useState(null);
+  // Y's Detonate: unlike Barricade/Curse, cast and payoff aren't separated
+  // in time at all (see Room.js's detonateSeq comment) -- one seq bump
+  // drives a short local four-phase sequence instead of independent
+  // broadcasts (see the detonateSeq effect further down for the full
+  // phase breakdown -- alarm, glow, reticle, blast). Each phase gets its
+  // own state, cleared by the one that follows it.
+  const [detonateAlarm, setDetonateAlarm] = useState(false);
+  const [detonateGlowTileId, setDetonateGlowTileId] = useState(null);
+  const [detonateReticleTileId, setDetonateReticleTileId] = useState(null);
+  const [detonateBlast, setDetonateBlast] = useState(null);
+  // Roaming crosshair during the alarm phase (DetonateCrosshairIcon) --
+  // `{ tileId, glideMs, glideEase }` while sweeping/locking on, null once
+  // the blast phase takes over. A standalone position, not folded into
+  // visualPositions (which is keyed per-player) since this icon isn't
+  // attached to any player's token.
+  const [detonateCrosshairPos, setDetonateCrosshairPos] = useState(null);
   const prevPositionsRef = useRef(new Map(players.map((p) => [p.id, p.position])));
   const prevRollSeqRef = useRef(rollSeq);
   const prevJailSeqRef = useRef(jailSeq);
@@ -736,6 +908,15 @@ export default function BoardClassic({ state, myId, tokenMoving, onTokenMovingCh
   // the same commit, so sharing one ref would let whichever effect runs
   // first silently consume the change before the other ever sees it.
   const prevTourSeqForBusRef = useRef(wreckingTourSeq);
+  // D's Barricade payoff: the shake/thud/snap need to land when the token
+  // VISUALLY arrives at the barricaded tile, not the instant the broadcast
+  // carrying barricadeSeq shows up (which is also the instant the move
+  // itself is dispatched -- the token's glide hasn't even started yet at
+  // that point). Reading barricadeJustHappened here, inside the same effect
+  // that resolves each move's own leg timings below, is what lets the
+  // impact be scheduled against that specific move's real glide duration
+  // instead of guessing at one separately.
+  const prevBarricadeSeqForImpactRef = useRef(barricadeSeq);
 
   useEffect(() => {
     const prevPositions = prevPositionsRef.current;
@@ -745,6 +926,8 @@ export default function BoardClassic({ state, myId, tokenMoving, onTokenMovingCh
     prevJailSeqRef.current = jailSeq;
     const tourJustHappened = wreckingTourSeq !== prevTourSeqForBusRef.current;
     prevTourSeqForBusRef.current = wreckingTourSeq;
+    const barricadeJustHappened = barricadeSeq !== prevBarricadeSeqForImpactRef.current;
+    prevBarricadeSeqForImpactRef.current = barricadeSeq;
     const prevPendingAction = prevPendingActionRef.current;
     prevPendingActionRef.current = state.pendingAction;
     const backwardMoverId =
@@ -785,6 +968,23 @@ export default function BoardClassic({ state, myId, tokenMoving, onTokenMovingCh
           from, to, isJailTeleport, jailFromDestination: jailFromTileId, backward: isBackwardCardMove,
         });
         if (tourJustHappened && lastWreckingTour?.casterId === id) setBusRidingId(id);
+        // Fires once the glide this same move just kicked off actually
+        // finishes -- summing every leg's own glideMs (plus any
+        // pauseBeforeMs, though a barricade stop is never a jail teleport
+        // so that's always 0 in practice) gives the real wall-clock time
+        // the token takes to reach `to`, on top of the shared post-roll
+        // startDelay every move already waits out.
+        if (barricadeJustHappened && lastBarricadeStop?.playerId === id) {
+          const totalGlideMs = legs.reduce((sum, leg) => sum + leg.glideMs + (leg.pauseBeforeMs || 0), 0);
+          const impactDelay = startDelay + totalGlideMs;
+          timers.push(setTimeout(() => {
+            playBarricadeThud();
+            setBoardShaking(true);
+            setBarricadeSnapId(id);
+          }, impactDelay));
+          timers.push(setTimeout(() => setBoardShaking(false), impactDelay + 400));
+          timers.push(setTimeout(() => setBarricadeSnapId(null), impactDelay + 450));
+        }
         stepTokenAlongLegs(id, legs, startDelay);
       });
     }
@@ -796,7 +996,7 @@ export default function BoardClassic({ state, myId, tokenMoving, onTokenMovingCh
       }), 700));
     }
     return () => timers.forEach(clearTimeout);
-  }, [players, rollSeq, jailSeq, jailedPlayerId, jailFromTileId, state.pendingAction, board.length, sideLen, trackCenters, wreckingTourSeq, lastWreckingTour]);
+  }, [players, rollSeq, jailSeq, jailedPlayerId, jailFromTileId, state.pendingAction, board.length, sideLen, trackCenters, wreckingTourSeq, lastWreckingTour, barricadeSeq, lastBarricadeStop]);
 
   // SD's Wrecking Tour (decisions.md): player.position now genuinely changes
   // to the tour's destination (see conductor.js), so the generic move-
@@ -855,6 +1055,205 @@ export default function BoardClassic({ state, myId, tokenMoving, onTokenMovingCh
     return () => timers.forEach(clearTimeout);
   }, [wreckingTourSeq, lastWreckingTour, board.length, sideLen]);
 
+  // D's Barricade -- cast moment (abilities.md brainstorm table). Unlike
+  // Wrecking Tour, Room.js has no dedicated seq field for the cast itself
+  // (only barricadeSeq, bumped on the PAYOFF -- see the next effect), so
+  // this diffs room.barricade's own identity (tileId+casterId) against the
+  // previous render instead of a seq counter. That's enough to tell a
+  // genuinely new cast apart from the same barricade re-arriving on an
+  // unrelated broadcast (someone else's turn, a reconnect snapshot, etc.),
+  // since a fresh cast always changes at least one of those two fields and
+  // a stale resend changes neither. Only a single object to track (not a
+  // list, unlike Curse's activeCurses), so this simpler diff is enough --
+  // wouldn't generalize as-is to a multi-entry ability.
+  const prevBarricadeRef = useRef(barricade);
+  useEffect(() => {
+    const prev = prevBarricadeRef.current;
+    prevBarricadeRef.current = barricade;
+    if (!barricade) return;
+    if (prev && prev.tileId === barricade.tileId && prev.casterId === barricade.casterId) return;
+    setBarricadeCastTileId(barricade.tileId);
+    const t = setTimeout(() => setBarricadeCastTileId(null), 500);
+    return () => clearTimeout(t);
+  }, [barricade]);
+
+  // D's Barricade -- payoff moment. The shake/thud/snap themselves are
+  // scheduled from inside the generic move-detection effect above
+  // (barricadeJustHappened), timed against that specific move's own glide
+  // duration -- not here. barricadeSeq/lastBarricadeStop already exist
+  // server-side (Room.js's applyBarricade) specifically so every client,
+  // not just the one who got stopped, can react -- same seq/lastX
+  // broadcast pattern as wreckingTourSeq/lastWreckingTour, just
+  // pre-existing rather than new.
+  //
+  // This effect only owns the standing-indicator's persistence: it flips
+  // barricadeLingerTileId on the instant the stop event arrives (not
+  // delayed to match the glide -- the icon should never actually vanish,
+  // just hold at this tile, so there's no "too early" to guard against the
+  // way there is for the shake/thud/snap). Ref starts at the current value
+  // (not 0) so restoring an already-sprung barricade from a snapshot on
+  // mount doesn't replay this for an event that already happened.
+  const prevBarricadeSeqForLingerRef = useRef(barricadeSeq);
+  useEffect(() => {
+    if (barricadeSeq === prevBarricadeSeqForLingerRef.current) return;
+    prevBarricadeSeqForLingerRef.current = barricadeSeq;
+    if (lastBarricadeStop) setBarricadeLingerTileId(lastBarricadeStop.tileId);
+  }, [barricadeSeq, lastBarricadeStop]);
+
+  // Clears the standing-indicator persistence above once the stopped
+  // player's own turn actually ends -- Room.js already nulls
+  // this.barricade well before that (the instant the stop is computed), so
+  // turnIndex changing is the only remaining signal for "their turn is
+  // over now." Not scoped to the specific player who got stopped: by the
+  // time turnIndex moves at all, it can only have moved off of them (a
+  // barricade-stopped player still finishes out the rest of their own
+  // turn like normal), so any turnIndex change is unambiguous here.
+  const prevTurnIndexForBarricadeRef = useRef(turnIndex);
+  useEffect(() => {
+    if (turnIndex === prevTurnIndexForBarricadeRef.current) return;
+    prevTurnIndexForBarricadeRef.current = turnIndex;
+    setBarricadeLingerTileId(null);
+  }, [turnIndex]);
+
+  // Z's Curse -- cast moment. Unlike Barricade, activeCurses is a LIST (Copy
+  // Cat can stack an independent second curse), so there's no single object
+  // to cheaply diff the way prevBarricadeRef does -- curseCastSeq/
+  // lastCurseCast exist specifically to give this an unambiguous "a new one
+  // just happened" edge (see Room.js/enforcer.js). The tendril only needs
+  // to READ visualPositions at render time (via CurseTendril below), not
+  // drive any glide itself, so this effect is much simpler than Barricade's
+  // cast handling -- just flip curseCastEvent on, then off after the
+  // animation's own duration.
+  const prevCurseCastSeqRef = useRef(curseCastSeq);
+  useEffect(() => {
+    if (curseCastSeq === prevCurseCastSeqRef.current) return;
+    prevCurseCastSeqRef.current = curseCastSeq;
+    if (!lastCurseCast) return;
+    setCurseCastEvent(lastCurseCast);
+    const t = setTimeout(() => setCurseCastEvent(null), 700);
+    return () => clearTimeout(t);
+  }, [curseCastSeq, lastCurseCast]);
+
+  // Z's Curse -- payoff moment. Unlike Barricade's payoff, there's no glide
+  // to sync against here -- a redirect can fire from any of a dozen+ money
+  // call sites (rent, cards, bank payouts...), not specifically a move, so
+  // curseDrainSeq/lastCurseDrain (Room.js's settleEarning) can just be
+  // played immediately rather than delayed to match an animation in
+  // flight. Ref starts at the current value so restoring a snapshot mid-
+  // curse doesn't replay a drain that already happened.
+  const prevCurseDrainSeqRef = useRef(curseDrainSeq);
+  useEffect(() => {
+    if (curseDrainSeq === prevCurseDrainSeqRef.current) return;
+    prevCurseDrainSeqRef.current = curseDrainSeq;
+    if (!lastCurseDrain) return;
+    playCurseDrain();
+    setCurseDrainTargetId(lastCurseDrain.targetId);
+    const t = setTimeout(() => setCurseDrainTargetId(null), 500);
+    return () => clearTimeout(t);
+  }, [curseDrainSeq, lastCurseDrain]);
+
+  // Y's Detonate -- cast+payoff, sequenced locally off ONE seq bump (see
+  // Room.js's detonateSeq comment -- unlike Barricade/Curse, targeting and
+  // resolution happen in the same synchronous server call, so there's no
+  // real gap in time to justify two separate broadcast pairs; the server
+  // has already fully resolved the ability by the time this broadcast
+  // arrives, everything below is purely cosmetic). User's own request --
+  // meant to read as a real showpiece, not just a quick flash -- so this
+  // is four staged phases instead of the original two:
+  //   1. Alarm (ALARM_MS): siren wail + the whole board pulses red, while
+  //      a crosshair (DetonateCrosshairIcon) sweeps around the board --
+  //      starting from the caster's own tile -- for most of this phase,
+  //      then locks onto the real target for the final stretch, arriving
+  //      exactly as this phase ends.
+  //   2. Glow (GLOW_MS): the target tile itself builds up a hot red glow,
+  //      like it's charging.
+  //   3. Reticle (RETICLE_MS): an exaggerated targeting-lock snap.
+  //   4. Blast (BLAST_MS): the explosion -- burst + crumbling icons +
+  //      boardShaking (reused from Barricade, same visual effect, no
+  //      reason for a second flag) + the boom sound. The crosshair is
+  //      cleared right as this starts -- the burst/reticle take over the
+  //      "something's happening here" job from this point on.
+  // Every phase's own start is an absolute delay from `now`, not a chain
+  // of nested timeouts, so the whole sequence is independently cancelable
+  // in one cleanup array (same pattern Barricade's payoff effect uses) --
+  // important here specifically since this sequence is much longer than
+  // any other ability's, so it's far more likely to still be in flight
+  // when an unrelated re-render tears this effect down.
+  const prevDetonateSeqRef = useRef(detonateSeq);
+  useEffect(() => {
+    if (detonateSeq === prevDetonateSeqRef.current) return;
+    prevDetonateSeqRef.current = detonateSeq;
+    if (!lastDetonate) return;
+    const ALARM_MS = 8000;
+    const GLOW_MS = 450;
+    const RETICLE_MS = 300;
+    const BLAST_MS = 750;
+    const glowStart = ALARM_MS;
+    const reticleStart = glowStart + GLOW_MS;
+    const blastStart = reticleStart + RETICLE_MS;
+
+    playSirenAlarm(ALARM_MS / 1000);
+    setDetonateAlarm(true);
+    const timers = [];
+
+    // Crosshair scan+lock: fast constant-speed hops around the board
+    // perimeter (HOP_MS each) for SCAN_MS, then one slower eased-out glide
+    // straight to the real target for the remaining LOCK_MS -- the two
+    // durations are chosen so they always sum to exactly ALARM_MS,
+    // regardless of how many whole hops fit into SCAN_MS (the last
+    // partial hop's worth of time just becomes part of the lock-in's own
+    // travel time instead of leaving an awkward gap). Starts from the
+    // caster's own current tile (reads as "searching outward from Y"),
+    // falling back to tile 0 on the off chance their position isn't in
+    // visualPositions yet.
+    const totalTiles = board.length;
+    const HOP_MS = 140;
+    const LOCK_MS = 1000;
+    const SCAN_MS = ALARM_MS - LOCK_MS;
+    const startTileId = visualPositions.get(lastDetonate.casterId)?.tileId ?? 0;
+    let scanTileId = startTileId;
+    for (let elapsed = 0; elapsed < SCAN_MS; elapsed += HOP_MS) {
+      scanTileId = (scanTileId + 1) % totalTiles;
+      const tileId = scanTileId;
+      timers.push(setTimeout(() => {
+        setDetonateCrosshairPos({ tileId, glideMs: HOP_MS, glideEase: "linear" });
+      }, elapsed));
+    }
+    timers.push(setTimeout(() => {
+      setDetonateCrosshairPos({ tileId: lastDetonate.tileId, glideMs: LOCK_MS, glideEase: LEG_EASE_OUT });
+    }, SCAN_MS));
+
+    timers.push(setTimeout(() => {
+      setDetonateAlarm(false);
+      setDetonateGlowTileId(lastDetonate.tileId);
+    }, glowStart));
+    timers.push(setTimeout(() => {
+      setDetonateGlowTileId(null);
+      setDetonateReticleTileId(lastDetonate.tileId);
+    }, reticleStart));
+    timers.push(setTimeout(() => {
+      setDetonateReticleTileId(null);
+      setDetonateBlast(lastDetonate);
+      setDetonateCrosshairPos(null);
+      playExplosion();
+      setBoardShaking(true);
+    }, blastStart));
+    timers.push(setTimeout(() => setBoardShaking(false), blastStart + 450));
+    timers.push(setTimeout(() => setDetonateBlast(null), blastStart + BLAST_MS));
+    return () => timers.forEach(clearTimeout);
+    // visualPositions is deliberately NOT a dependency, unlike board.length
+    // (which is here purely to satisfy the linter -- it never actually
+    // changes mid-game, same reasoning the wreckingTourSeq effect's own
+    // deps array already includes it for). visualPositions changes on
+    // every single player's move, and this effect must only ever run when
+    // detonateSeq itself changes -- including visualPositions would
+    // restart this entire ~9.5s sequence (cancelling every in-flight timer
+    // above) the instant anyone else took a turn while it was still
+    // playing. The read at the top (startTileId) intentionally captures
+    // whatever visualPositions holds at the moment detonateSeq changes,
+    // once, not a value this effect should ever react to changing.
+  }, [detonateSeq, lastDetonate, board.length]);
+
   // Tracks whether the dice's own jump/spin animation (1s, see dice.css
   // `d3-jump`) is still playing for the roll that just happened, so the
   // center action button doesn't swap to "End Turn" out from under the dice
@@ -894,7 +1293,7 @@ export default function BoardClassic({ state, myId, tokenMoving, onTokenMovingCh
     <div className="cv2-root" style={{ width: "100%", height: "100%" }}>
       <div
         ref={boardRef}
-        className="cv2-board"
+        className={`cv2-board${boardShaking ? " cv2-board--shake" : ""}${barricadeCastTileId != null ? " cv2-board--barricade-dim" : ""}${curseCastEvent ? " cv2-board--curse-dim" : ""}${detonateAlarm ? " cv2-board--detonate-alarm" : ""}`}
         style={{
           display: "grid",
           gridTemplateColumns: gridTemplate,
@@ -925,8 +1324,21 @@ export default function BoardClassic({ state, myId, tokenMoving, onTokenMovingCh
             onSelect={handleTileClick}
             isSelected={selectedTileId === tile.id}
             targeting={tileTargeting}
+            barricaded={barricade?.tileId === tile.id || barricadeLingerTileId === tile.id}
+            barricadeCasting={barricadeCastTileId === tile.id}
+            detonateGlow={detonateGlowTileId === tile.id}
+            detonateReticle={detonateReticleTileId === tile.id}
+            detonateBlast={detonateBlast?.tileId === tile.id ? detonateBlast : null}
           />
         ))}
+
+        {/* Below TokenLayer in source order (and lower z-index, see its own
+            CSS) so it reads as passing under/between the tokens rather than
+            drawn on top of their faces -- tokens must always render above
+            anything tile/effect-related (see cv2-token-layer's own z-index
+            comment). */}
+        <CurseTendril event={curseCastEvent} sideLen={sideLen} trackCenters={trackCenters} visualPositions={visualPositions} />
+        <DetonateCrosshairIcon pos={detonateCrosshairPos} sideLen={sideLen} trackCenters={trackCenters} />
 
         <TokenLayer
           players={players}
@@ -940,6 +1352,9 @@ export default function BoardClassic({ state, myId, tokenMoving, onTokenMovingCh
           landingIds={landingIds}
           celebratingIds={celebratingIds}
           busRidingId={busRidingId}
+          barricadeSnapId={barricadeSnapId}
+          activeCurses={activeCurses}
+          curseDrainTargetId={curseDrainTargetId}
         />
 
         {selectedTile && (
@@ -1068,9 +1483,18 @@ export default function BoardClassic({ state, myId, tokenMoving, onTokenMovingCh
                     <button className="cv2-roll-btn" onClick={() => { primeAudio(); socket.emit("rollDice"); }}>
                       Roll Dice
                     </button>
-                    <button className="cv2-roll-btn" onClick={() => socket.emit("payToLeaveHolding")}>
-                      Pay $50
-                    </button>
+                    {/* Z's permanent drawback (Room.js's payToLeaveHolding,
+                        characters.md) -- always rejected server-side, never
+                        tied to whether Curse has been cast, so there's
+                        nothing this button could ever do for him. Was
+                        rendering anyway and silently no-opping on click
+                        (the emit has no ack callback to surface an error
+                        with) -- hidden rather than shown-and-broken. */}
+                    {me.character !== "Z" && (
+                      <button className="cv2-roll-btn" onClick={() => socket.emit("payToLeaveHolding")}>
+                        Pay $50
+                      </button>
+                    )}
                     {me.holdingFreeCard && (
                       <button className="cv2-roll-btn cv2-decline-btn" onClick={() => socket.emit("useHoldingFreeCard")}>
                         رن عالواسطة

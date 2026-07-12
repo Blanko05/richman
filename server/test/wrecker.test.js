@@ -168,6 +168,46 @@ test("active: Detonate rejects a non-property tile", () => {
   assert.equal(result.error, "Invalid target");
 });
 
+test("broadcast: demolishing bumps detonateSeq/lastDetonate for client animation, carrying levelsRemoved since owned.houses is already 0 by the time the broadcast lands", () => {
+  const room = makeRoom(["Wrecker", "Victim"]);
+  after(() => cleanup(room));
+  room.playerById("p0").character = "Y";
+  room.debugGrantGroup("p1", "olive");
+  room.ownership[10].houses = 3;
+  assert.equal(room.detonateSeq, 0);
+  assert.equal(room.lastDetonate, null);
+
+  room.useAbility("p0", { tileId: 10 });
+
+  assert.equal(room.detonateSeq, 1);
+  assert.deepEqual(room.lastDetonate, { casterId: "p0", targetId: "p1", tileId: 10, levelsRemoved: 3, forcedMortgage: false });
+});
+
+test("broadcast: a forced mortgage (nothing built) also bumps detonateSeq/lastDetonate, with forcedMortgage true and levelsRemoved 0", () => {
+  const room = makeRoom(["Wrecker", "Victim"]);
+  after(() => cleanup(room));
+  room.playerById("p0").character = "Y";
+  room.debugGrantGroup("p1", "pink");
+
+  room.useAbility("p0", { tileId: 1 });
+
+  assert.equal(room.detonateSeq, 1);
+  assert.deepEqual(room.lastDetonate, { casterId: "p0", targetId: "p1", tileId: 1, levelsRemoved: 0, forcedMortgage: true });
+});
+
+test("broadcast: a rejected Detonate (already mortgaged, self-target, etc.) doesn't bump detonateSeq", () => {
+  const room = makeRoom(["Wrecker", "Victim"]);
+  after(() => cleanup(room));
+  room.playerById("p0").character = "Y";
+  room.debugGrantGroup("p1", "pink");
+  room.mortgageProperty("p1", 1);
+
+  room.useAbility("p0", { tileId: 1 });
+
+  assert.equal(room.detonateSeq, 0);
+  assert.equal(room.lastDetonate, null);
+});
+
 test("active: Detonate is blocked while on cooldown, and the cooldown only ticks on Y's own turn end", () => {
   const room = makeRoom(["Wrecker", "Victim"]);
   after(() => cleanup(room));

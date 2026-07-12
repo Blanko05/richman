@@ -24,7 +24,7 @@ function TurnCountdown({ deadline }) {
 }
 
 export default function PlayersPanel({ state, myId, onLeave, theme, onToggleTheme, tokenMoving, onSwitchIdentity, playerTargeting, onPlayerTarget }) {
-  const { players, roomCode, hostId, started, winnerId } = state;
+  const { players, roomCode, hostId, started, winnerId, activeCurses, curseDrainSeq, lastCurseDrain } = state;
   const isHost = hostId === myId;
   const currentPlayerId = started ? players[state.turnIndex]?.id : null;
   const activePlayers = players.filter((p) => !p.left);
@@ -85,6 +85,29 @@ export default function PlayersPanel({ state, myId, onLeave, theme, onToggleThem
       delete rest[playerId];
       return rest;
     });
+  }
+
+  // Z's Curse payoff: the cursed target's own balance never actually moves
+  // across a broadcast (settleEarning credits then claws it back in the
+  // same synchronous tick -- see Room.js), so the generic balance-flash
+  // above never fires for them even though something just happened. This
+  // is the only visible evidence a drain occurred, driven off the
+  // dedicated curseDrainSeq/lastCurseDrain broadcast instead of a balance
+  // diff. Same !tokenMoving gate as the balance flash, for the same
+  // reason -- a drain from a landing tile's rent broadcasts well before
+  // the token's own glide finishes.
+  const prevCurseDrainSeqRef = useRef(curseDrainSeq);
+  const [curseFlash, setCurseFlash] = useState(null);
+  useEffect(() => {
+    if (tokenMoving) return;
+    if (curseDrainSeq === prevCurseDrainSeqRef.current) return;
+    prevCurseDrainSeqRef.current = curseDrainSeq;
+    if (!lastCurseDrain) return;
+    setCurseFlash({ id: `${lastCurseDrain.targetId}-${Date.now()}`, ...lastCurseDrain });
+  }, [curseDrainSeq, lastCurseDrain, tokenMoving]);
+
+  function clearCurseFlash(flashId) {
+    setCurseFlash((f) => (f?.id === flashId ? null : f));
   }
 
   return (
@@ -190,6 +213,16 @@ export default function PlayersPanel({ state, myId, onLeave, theme, onToggleThem
                   {p.left && <span className="panel-badge badge-left">left</span>}
                   {!p.connected && !p.left && <span className="panel-badge badge-dc">reconnecting…</span>}
                   {p.balance < 0 && <span className="panel-badge badge-debt">in debt</span>}
+                  {/* Z's Curse standing indicator -- straight off
+                      activeCurses, same "no seq needed, it's just already
+                      broadcast" reasoning as Barricade's own standing icon.
+                      Board token badge (PlayerToken.jsx) is the other half
+                      of this same signal -- kept here too since Curse
+                      targets a PLAYER, not a tile, so the sidebar row is
+                      just as natural a home for it as the board. */}
+                  {activeCurses?.some((c) => c.targetId === p.id) && (
+                    <img src="/reaper.png" className="panel-cursed-icon" alt="Cursed" title="Cursed" />
+                  )}
                 </div>
               </div>
               {isCurrent && <TurnCountdown deadline={state.turnDeadline} />}
@@ -202,6 +235,15 @@ export default function PlayersPanel({ state, myId, onLeave, theme, onToggleThem
                     onAnimationEnd={() => clearFlash(p.id, flashes[p.id].id)}
                   >
                     {flashes[p.id].delta > 0 ? "+" : "-"}${Math.abs(flashes[p.id].delta)}
+                  </span>
+                )}
+                {curseFlash?.targetId === p.id && (
+                  <span
+                    key={curseFlash.id}
+                    className="balance-flash curse-drain-flash"
+                    onAnimationEnd={() => clearCurseFlash(curseFlash.id)}
+                  >
+                    💀 -${curseFlash.amount}
                   </span>
                 )}
               </span>

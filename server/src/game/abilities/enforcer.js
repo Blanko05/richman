@@ -46,6 +46,14 @@ export const enforcer = {
     // stale entry from this caster first rather than assume it can't happen.
     room.activeCurses = room.activeCurses.filter((c) => c.casterId !== caster.id);
     room.activeCurses.push({ targetId, casterId: caster.id });
+    // Client-animation broadcast only (see Room.js's curseCastSeq comment) --
+    // activeCurses itself already carries this same { targetId, casterId }
+    // pair; this just gives the client an unambiguous "a NEW one just
+    // happened" edge to animate off of, since activeCurses is a list a
+    // client can't cheaply diff for that the way Barricade's single object
+    // could.
+    room.curseCastSeq += 1;
+    room.lastCurseCast = { targetId, casterId: caster.id };
     room.pushLog(`${caster.name} cursed ${target.name} until their own next turn.`);
     return { ok: true, targetId };
   },

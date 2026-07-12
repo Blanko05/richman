@@ -278,6 +278,46 @@ test("drawback: Z can never pay to leave the Holding Pen, permanently, whether o
   assert.equal(result.error, "The Enforcer can't buy their way out of the Holding Pen");
 });
 
+test("broadcast: casting Curse bumps curseCastSeq/lastCurseCast for client animation, activeCurses being a list rather than a single slot", () => {
+  const room = makeRoom(["Target", "Enforcer"]);
+  after(() => cleanup(room));
+  room.playerById("p1").character = "Z";
+  room.turnIndex = 1; // abilities are turn-gated -- cast on Z's own turn
+  assert.equal(room.curseCastSeq, 0);
+  assert.equal(room.lastCurseCast, null);
+
+  room.useAbility("p1", { targetId: "p0" });
+
+  assert.equal(room.curseCastSeq, 1);
+  assert.deepEqual(room.lastCurseCast, { targetId: "p0", casterId: "p1" });
+});
+
+test("broadcast: a redirect bumps curseDrainSeq/lastCurseDrain -- the target's own balance never visibly moves, so this is the only signal a client has that anything happened to them", () => {
+  const room = makeRoom(["Target", "Enforcer"]);
+  after(() => cleanup(room));
+  room.playerById("p1").character = "Z";
+  room.turnIndex = 1; // abilities are turn-gated -- cast on Z's own turn
+  room.useAbility("p1", { targetId: "p0" });
+  room.turnIndex = 0;
+  assert.equal(room.curseDrainSeq, 0);
+
+  room.applyCardEffect(room.playerById("p0"), { type: "collect", amount: 30 });
+
+  assert.equal(room.curseDrainSeq, 1);
+  assert.deepEqual(room.lastCurseDrain, { targetId: "p0", casterId: "p1", amount: 30 });
+});
+
+test("broadcast: an earning event that ISN'T redirected (no active curse on the recipient) doesn't bump curseDrainSeq", () => {
+  const room = makeRoom(["Uncursed", "Enforcer"]);
+  after(() => cleanup(room));
+  room.playerById("p1").character = "Z";
+
+  room.applyCardEffect(room.playerById("p0"), { type: "collect", amount: 30 });
+
+  assert.equal(room.curseDrainSeq, 0);
+  assert.equal(room.lastCurseDrain, null);
+});
+
 test("stacking: D's tax cut and Z's tax cut both independently apply to the same tax payment", () => {
   const room = makeRoom(["Taxed", "Don", "Enforcer"]);
   after(() => cleanup(room));

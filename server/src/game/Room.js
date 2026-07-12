@@ -147,6 +147,21 @@ export class Room {
     // once the casting player's own next turn comes around (endTurn), not a
     // global round boundary -- decisions.md.
     this.activeCurses = [];
+    // Client-animation broadcast pair for Curse's cast moment (abilities.md)
+    // -- activeCurses being a LIST (unlike barricade, a single slot) means a
+    // client can't cheaply tell "a new curse got added" apart from "the list
+    // changed for an unrelated reason" just by diffing the array, so this
+    // needs its own seq the way wreckingTourSeq/lastWreckingTour does, rather
+    // than reusing barricade's cheaper diff-the-object trick.
+    this.curseCastSeq = 0;
+    this.lastCurseCast = null;
+    // Same idea for Curse's payoff moment -- bumped in settleEarning below,
+    // once per actual redirect (not once per curse, and not on every earning
+    // event a cursed player has -- only the ones that actually clawed
+    // something back), so a client can play a "drain" animation right when
+    // money actually moves, not just whenever activeCurses itself changes.
+    this.curseDrainSeq = 0;
+    this.lastCurseDrain = null;
     // H's Hostile Takeover (see abilities/kingpin.js) -- { tileId,
     // previousOwnership, casterId } while active, null otherwise. Reverts to
     // previousOwnership (or unowned, if it was previousOwnership === null)
@@ -159,6 +174,17 @@ export class Room {
     // happened" role as barricadeSeq/lastBarricadeStop.
     this.wreckingTourSeq = 0;
     this.lastWreckingTour = null;
+    // Y's Detonate (see abilities/wrecker.js) -- unlike Barricade/Curse,
+    // this ability has no separate cast-then-later-payoff timeline at all:
+    // targeting and resolution happen in the same synchronous call, so one
+    // broadcast pair covers both the crosshair flash and the explosion
+    // (client times the two off a single event instead of two). Carries
+    // levelsRemoved specifically because owned.houses is already reset to
+    // 0 by the time this same broadcast reaches the client -- without it,
+    // there'd be no way to know how many house/hotel icons to animate
+    // crumbling.
+    this.detonateSeq = 0;
+    this.lastDetonate = null;
   }
 
   updateSettings(hostId, { rules } = {}) {
@@ -1209,6 +1235,14 @@ export class Room {
     if (netGain > 0 && curse) {
       recipient.balance -= netGain;
       this.playerById(curse.casterId).balance += netGain;
+      // Client-animation signal only (see curseDrainSeq's own comment above)
+      // -- the recipient's balance is back to `before` by now, so without
+      // this, nothing in toState() ever shows evidence this redirect
+      // happened at all: no visible balance delta to diff against on the
+      // target's side, and the caster's own balance bump alone doesn't say
+      // WHY it moved.
+      this.curseDrainSeq += 1;
+      this.lastCurseDrain = { targetId: recipientId, casterId: curse.casterId, amount: netGain };
     }
   }
 
@@ -1684,9 +1718,15 @@ export class Room {
       barricadeSeq: this.barricadeSeq,
       lastBarricadeStop: this.lastBarricadeStop,
       activeCurses: this.activeCurses,
+      curseCastSeq: this.curseCastSeq,
+      lastCurseCast: this.lastCurseCast,
+      curseDrainSeq: this.curseDrainSeq,
+      lastCurseDrain: this.lastCurseDrain,
       hostileTakeover: this.hostileTakeover,
       wreckingTourSeq: this.wreckingTourSeq,
       lastWreckingTour: this.lastWreckingTour,
+      detonateSeq: this.detonateSeq,
+      lastDetonate: this.lastDetonate,
     };
   }
 
@@ -1728,9 +1768,15 @@ export class Room {
       barricadeSeq: this.barricadeSeq,
       lastBarricadeStop: this.lastBarricadeStop,
       activeCurses: this.activeCurses,
+      curseCastSeq: this.curseCastSeq,
+      lastCurseCast: this.lastCurseCast,
+      curseDrainSeq: this.curseDrainSeq,
+      lastCurseDrain: this.lastCurseDrain,
       hostileTakeover: this.hostileTakeover,
       wreckingTourSeq: this.wreckingTourSeq,
       lastWreckingTour: this.lastWreckingTour,
+      detonateSeq: this.detonateSeq,
+      lastDetonate: this.lastDetonate,
     };
   }
 
@@ -1780,9 +1826,15 @@ export class Room {
     room.barricadeSeq = snapshot.barricadeSeq || 0;
     room.lastBarricadeStop = snapshot.lastBarricadeStop || null;
     room.activeCurses = snapshot.activeCurses || [];
+    room.curseCastSeq = snapshot.curseCastSeq || 0;
+    room.lastCurseCast = snapshot.lastCurseCast || null;
+    room.curseDrainSeq = snapshot.curseDrainSeq || 0;
+    room.lastCurseDrain = snapshot.lastCurseDrain || null;
     room.hostileTakeover = snapshot.hostileTakeover || null;
     room.wreckingTourSeq = snapshot.wreckingTourSeq || 0;
     room.lastWreckingTour = snapshot.lastWreckingTour || null;
+    room.detonateSeq = snapshot.detonateSeq || 0;
+    room.lastDetonate = snapshot.lastDetonate || null;
 
     for (const player of room.players) {
       if (!player.connected && !player.left && !player.bankrupt) {

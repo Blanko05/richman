@@ -408,6 +408,14 @@
 .cv2-token-layer {
   position: absolute;
   inset: 0;
+  /* Deliberately way above any tile-internal z-index (price tag: 2, board
+     dim/alarm wash: 2, tile-selected: 3, building badge: 4, barricade
+     icon: 5, its dust-puff: 6, detonate reticle: 7, its burst: 8, its
+     crumbling icons: 9, its camera-flash: 10) or board-wide effect
+     overlay (curse tendril: 40, detonate scanning crosshair: 42) --
+     tokens must always render on top of anything tile/effect-related, not
+     just these specific values. Keep any future z-index comfortably under
+     this one rather than creeping up to meet it. */
   z-index: 50;
   pointer-events: none;
 }
@@ -634,6 +642,103 @@
   animation: cv2-token-celebrate-bounce 0.7s ease-out 1, cv2-token-glow 1.4s ease-in-out infinite;
 }
 
+/* D's Barricade payoff (barricadeSeq/lastBarricadeStop, see Room.js): the
+   player who actually got stopped short. Targets .cv2-token-face rather
+   than .cv2-token-inner on purpose -- .cv2-token-inner is what the
+   floating/landing glide transforms already live on (see above), and this
+   plays at the exact same moment a glide is settling into --landing, so a
+   second transform source there would fight the glide's own. A box-shadow
+   flash + brief squash-pop composes cleanly alongside it instead. */
+@keyframes cv2-token-barricade-snap {
+  0%   { box-shadow: 0 9px 10px rgba(0,0,0,0.45), 0 3px 4px rgba(0,0,0,0.35), 0 0 0 0 rgba(139,26,26,0); transform: scale(1); }
+  30%  { box-shadow: 0 9px 10px rgba(0,0,0,0.45), 0 3px 4px rgba(0,0,0,0.35), 0 0 16px 8px rgba(139,26,26,0.85); transform: scale(0.82, 1.18); }
+  60%  { transform: scale(1.1, 0.9); }
+  100% { box-shadow: 0 9px 10px rgba(0,0,0,0.45), 0 3px 4px rgba(0,0,0,0.35), 0 0 0 0 rgba(139,26,26,0); transform: scale(1); }
+}
+.cv2-token--barricade-snap .cv2-token-face {
+  animation: cv2-token-barricade-snap 0.45s ease-out 1;
+}
+
+/* ---------- Z's Curse ---------- */
+/* Standing indicator: a small skull badge pinned to a cursed player's own
+   token, sibling of .cv2-token-inner (see PlayerToken.jsx's comment on
+   why) so it's unaffected by the inner element's own bob/floating/
+   celebrate/snap animations. Persists for as long as this player is in
+   room.activeCurses -- no seq/timing plumbing needed, same as Barricade's
+   standing icon. Positioned at the token's own top-right rather than dead
+   center (cv2-barricade-icon's spot) since a token is much smaller than a
+   tile and centering an overlay there would fully obscure the face/icon
+   underneath. */
+.cv2-token-cursed-badge {
+  position: absolute;
+  top: -18%;
+  right: -18%;
+  width: 55%;
+  z-index: 2;
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.65));
+  animation: cv2-barricade-idle-pulse 1.8s ease-in-out infinite;
+  pointer-events: none;
+}
+
+/* Payoff: a redirect actually firing (curseDrainSeq/lastCurseDrain, see
+   Room.js's settleEarning). Deep purple-red pulse on the TARGET's own
+   token -- distinct hue from Barricade's snap (a warm brown-red impact)
+   so the two read as different kinds of events at a glance, not just
+   "something happened to this token" twice over. Same
+   targets-cv2-token-face-not-cv2-token-inner reasoning as the barricade
+   snap above. */
+@keyframes cv2-token-curse-drain {
+  0%   { box-shadow: 0 9px 10px rgba(0,0,0,0.45), 0 3px 4px rgba(0,0,0,0.35), 0 0 0 0 rgba(139,26,74,0); filter: brightness(1); }
+  35%  { box-shadow: 0 9px 10px rgba(0,0,0,0.45), 0 3px 4px rgba(0,0,0,0.35), 0 0 18px 9px rgba(139,26,74,0.9); filter: brightness(0.7); }
+  100% { box-shadow: 0 9px 10px rgba(0,0,0,0.45), 0 3px 4px rgba(0,0,0,0.35), 0 0 0 0 rgba(139,26,74,0); filter: brightness(1); }
+}
+.cv2-token--curse-drain .cv2-token-face {
+  animation: cv2-token-curse-drain 0.5s ease-out 1;
+}
+
+/* Cast moment: the tendril line itself (see CurseTendril in
+   BoardClassic.jsx). Board-wide SVG overlay, same positioning role as
+   .cv2-token-layer but drawn just underneath it (z-index below 50) so it
+   reads as passing under the tokens' own faces rather than over them --
+   see .cv2-token-layer's own z-index comment for why tokens always win. */
+.cv2-curse-tendril {
+  position: absolute;
+  inset: 0;
+  z-index: 40;
+  pointer-events: none;
+  overflow: visible;
+}
+.cv2-curse-tendril line {
+  stroke: #6b1442;
+  stroke-width: 0.8;
+  stroke-linecap: round;
+  filter: drop-shadow(0 0 3px rgba(139, 26, 74, 0.85));
+  animation: cv2-curse-tendril-draw 0.7s ease-out 1;
+}
+/* Draws the line in (stroke-dashoffset from full-length down to 0) and
+   fades it back out at the very end, rather than the line just appearing
+   fully-formed and popping off -- a fixed dasharray longer than any
+   realistic board diagonal (140, safely over the ~100-unit viewBox's own
+   worst case) is simpler than measuring each line's real length in JS. */
+@keyframes cv2-curse-tendril-draw {
+  0%   { stroke-dasharray: 140; stroke-dashoffset: 140; opacity: 1; }
+  60%  { stroke-dasharray: 140; stroke-dashoffset: 0; opacity: 1; }
+  100% { stroke-dasharray: 140; stroke-dashoffset: 0; opacity: 0; }
+}
+
+/* Cast moment: whole-board vignette, same technique as
+   .cv2-board--barricade-dim but tinted deep purple-red instead of brown so
+   the two abilities' cast moments don't read as the same event. */
+.cv2-board--curse-dim::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(ellipse at center, rgba(107, 20, 66, 0.05) 0%, rgba(30, 6, 20, 0.35) 100%);
+  z-index: 2;
+  pointer-events: none;
+  animation: cv2-barricade-board-dim 0.7s ease-out 1;
+}
+
 /* ---------- Treasure / Surprise tile icons ---------- */
 /* cv2-icon-center lives INSIDE cv2-body so it participates in cv2-body's
    grid/flex layout — no absolute overflow issues on narrow side tiles.
@@ -858,6 +963,310 @@
   outline: 3px solid #c9960a;
   outline-offset: -3px;
   z-index: 3;
+}
+
+/* ---------- D's Barricade ---------- */
+/* Standing indicator: rendered whenever room.barricade.tileId === this
+   tile's own id, OR while barricadeLingerTileId still points at it (see
+   ClassicTile/BoardClassic.jsx) -- the latter covers the window between
+   the stop actually happening (Room.js nulls this.barricade immediately,
+   same broadcast as the move) and the stopped player's own turn actually
+   ending, so the icon doesn't vanish out from under a token that hasn't
+   even finished walking up to it yet. Sized/positioned like the
+   treasure/surprise tile icons (cv2-tile-icon) but pinned centered and
+   above everything else on the tile (building badge included) so it never
+   gets lost against a busy owned/developed tile. */
+.cv2-barricade-icon {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: clamp(20px, 3.4vw, 34px);
+  z-index: 5;
+  filter: drop-shadow(0 2px 3px rgba(0, 0, 0, 0.65));
+  animation: cv2-barricade-idle-pulse 1.8s ease-in-out infinite;
+  pointer-events: none;
+}
+@keyframes cv2-barricade-idle-pulse {
+  0%, 100% { filter: drop-shadow(0 2px 3px rgba(0,0,0,0.65)) drop-shadow(0 0 0 rgba(139,26,26,0)); }
+  50%      { filter: drop-shadow(0 2px 3px rgba(0,0,0,0.65)) drop-shadow(0 0 6px rgba(139,26,26,0.85)); }
+}
+/* Left/right tiles: same rotate(90deg)/-90deg convention already used for
+   the building icons (cv2-building-icon) above -- a "wall" reads correctly
+   as blocking forward travel along the rim only if it's turned to face the
+   same way the rest of that edge's content does, not left sitting at its
+   base top/bottom orientation. Only overrides `transform` (the
+   translate(-50%,-50%) centering plus the rotation) -- the idle-pulse
+   animation above only ever touches `filter`, so the two compose safely
+   without one clobbering the other. */
+.cv2-side-left .cv2-barricade-icon {
+  transform: translate(-50%, -50%) rotate(90deg);
+}
+.cv2-side-right .cv2-barricade-icon {
+  transform: translate(-50%, -50%) rotate(-90deg);
+}
+
+/* Cast moment: the targeted tile gets a brief "slam" (a sharp squash-down
+   then settle) plus a dust-puff ring expanding from its center. Driven by
+   BoardClassic.jsx diffing room.barricade itself (tileId+casterId) rather
+   than a dedicated seq field -- see its prevBarricadeRef effect -- since a
+   single object (not a list, unlike Curse's activeCurses) is enough to
+   tell a genuinely new cast apart from a resend. `overflow: hidden` on
+   .cv2-tile clips the dust ring at the tile's own edge, which is fine --
+   reads as dust kicked up right at the impact point, not a bigger blast. */
+.cv2-tile--barricade-slam {
+  animation: cv2-tile-barricade-slam 0.5s cubic-bezier(0.34, 1.56, 0.64, 1) 1;
+}
+@keyframes cv2-tile-barricade-slam {
+  0%   { transform: scale(1); }
+  25%  { transform: scale(0.9, 0.85); }
+  55%  { transform: scale(1.04, 1.06); }
+  100% { transform: scale(1); }
+}
+.cv2-tile--barricade-slam::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 10%;
+  height: 10%;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(120, 96, 60, 0.75) 0%, rgba(120, 96, 60, 0) 70%);
+  transform: translate(-50%, -50%) scale(1);
+  animation: cv2-barricade-dust-puff 0.5s ease-out 1;
+  pointer-events: none;
+  z-index: 6;
+}
+@keyframes cv2-barricade-dust-puff {
+  0%   { transform: translate(-50%, -50%) scale(1); opacity: 0.9; }
+  100% { transform: translate(-50%, -50%) scale(6); opacity: 0; }
+}
+
+/* Board dim: a brief whole-board wash the instant Barricade is cast,
+   applied to .cv2-board itself (see BoardClassic.jsx's barricadeCastTileId)
+   so it reads as "the board reacted", not just the one tile. */
+.cv2-board--barricade-dim::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.22);
+  z-index: 2;
+  pointer-events: none;
+  animation: cv2-barricade-board-dim 0.5s ease-out 1;
+}
+@keyframes cv2-barricade-board-dim {
+  0%   { opacity: 1; }
+  100% { opacity: 0; }
+}
+
+/* Payoff: a real screen-shake the instant someone actually gets stopped by
+   the wall (barricadeSeq/lastBarricadeStop). Small, fast, and horizontal-
+   biased -- reads as an impact jolt rather than the whole board wobbling. */
+.cv2-board--shake {
+  animation: cv2-board-shake 0.4s ease-in-out 1;
+}
+@keyframes cv2-board-shake {
+  0%, 100% { transform: translate(0, 0); }
+  20%      { transform: translate(-6px, 2px); }
+  40%      { transform: translate(5px, -2px); }
+  60%      { transform: translate(-4px, 1px); }
+  80%      { transform: translate(3px, -1px); }
+}
+
+/* ---------- Y's Detonate ---------- */
+/* No standing indicator for this one -- it's an instant effect
+   (abilities.md's brainstorm table), so unlike Barricade/Curse there's
+   nothing here that persists between the cast and the payoff at all.
+   User's own request (Pass 53): meant to be a real showpiece, not a quick
+   flash, so this is a four-phase sequence -- alarm, glow, reticle, blast
+   -- timed in BoardClassic.jsx's detonateSeq effect. Alarm/glow below;
+   reticle/blast further down are the original two phases, exaggerated. */
+
+/* Phase 1 -- Alarm, roaming crosshair (crossair.png, user-supplied Pass
+   54): sweeps the board during the alarm phase, then locks onto the real
+   target for the phase's final stretch (see BoardClassic.jsx's
+   detonateSeq effect for the scan/lock timing). Board-wide overlay
+   element, positioned the same left/top-percentage way TokenLayer
+   positions a token -- --glide-ms/--glide-ease vary per hop (set inline
+   by DetonateCrosshairIcon), same trick PlayerToken's own glide already
+   uses, so the fast scan hops and the single slower lock-on glide can
+   share one CSS transition rule instead of needing separate keyframes.
+   Sits below TokenLayer (z-index 50) but above ordinary tile content --
+   same tier as the Curse tendril, which it's the sibling of in the JSX. */
+.cv2-detonate-crosshair {
+  position: absolute;
+  width: clamp(22px, 4vw, 38px);
+  z-index: 42;
+  pointer-events: none;
+  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.6)) drop-shadow(0 0 8px rgba(232, 72, 12, 0.85));
+  transition: left var(--glide-ms, 140ms) var(--glide-ease, linear),
+              top var(--glide-ms, 140ms) var(--glide-ease, linear);
+  animation: cv2-detonate-crosshair-spin 1.1s linear infinite;
+}
+/* Baked-in translate(-50%,-50%) centering on every step -- `animation`
+   fully owns `transform` on an element it's applied to, so a separate
+   static `transform` on the base rule above would just get overridden by
+   this the instant the animation starts (same reasoning documented on
+   cv2-token's own --bus-scale/transform split). */
+@keyframes cv2-detonate-crosshair-spin {
+  from { transform: translate(-50%, -50%) rotate(0deg); }
+  to   { transform: translate(-50%, -50%) rotate(360deg); }
+}
+
+/* Phase 1 -- Alarm: the whole board pulses red in time with the siren
+   wail (playSirenAlarm, sfx.js), before any specific tile is even
+   highlighted -- reads as "something big is about to happen" independent
+   of where it lands. Repeats indefinitely (not a fixed beat count) since
+   the alarm phase itself now runs a full 8s (ALARM_MS, BoardClassic.jsx)
+   to match the siren's own duration -- `infinite` plus JS clearing the
+   class at exactly 8000ms is simpler than computing how many 0.5s beats
+   fit evenly into that window, and cutting off mid-pulse reads fine for a
+   rapid alternating flash like this. Same ::before-overlay technique as
+   barricade/curse's board dims, just repeating instead of a single fade
+   -- only one of these three dim/alarm classes is ever active on
+   .cv2-board at once in practice (one ability resolving at a time), so
+   there's no ::before collision between them. */
+.cv2-board--detonate-alarm::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(ellipse at center, rgba(232, 72, 12, 0.1) 0%, rgba(139, 12, 12, 0.5) 100%);
+  z-index: 2;
+  pointer-events: none;
+  animation: cv2-detonate-alarm-pulse 0.5s ease-in-out infinite;
+}
+@keyframes cv2-detonate-alarm-pulse {
+  0%, 100% { opacity: 0.15; }
+  50%      { opacity: 1; }
+}
+
+/* Phase 2 -- Glow: the target tile itself builds up a hot red glow right
+   after the alarm, like it's charging before the reticle even locks on.
+   Grows monotonically (not a pulse like the alarm above) so it reads as
+   "heat building toward the reticle/blast", a distinct feeling from the
+   alarm's own alternating warning flash. */
+.cv2-tile--detonate-glow {
+  animation: cv2-detonate-glow-build 0.45s ease-in 1 both;
+}
+@keyframes cv2-detonate-glow-build {
+  0%   { box-shadow: inset 0 0 0 0 rgba(232, 72, 12, 0); }
+  100% { box-shadow: inset 0 0 22px 6px rgba(232, 72, 12, 0.85), inset 0 0 0 2px rgba(255, 120, 40, 0.9); }
+}
+
+/* Phase 3 -- Reticle: an exaggerated targeting-lock snap on the tile the
+   glow just built up on -- purely cosmetic (the server's already fully
+   resolved the ability by the time this broadcast arrives, see Room.js's
+   detonateSeq comment), just the beat of "here's where it's about to
+   land" before the blast below takes over. Fire-orange, distinct from
+   cv2-tile-targetable's gold (which means "you can click here", a
+   different meaning entirely). Bigger overshoot and an extra pulse-ring
+   (::before) than the original single-snap version, to read as more
+   dramatic given the buildup that now precedes it. */
+.cv2-tile-detonate-reticle {
+  position: absolute;
+  inset: 8%;
+  z-index: 7;
+  pointer-events: none;
+  border: 3px solid #e8480c;
+  box-shadow: 0 0 16px 4px rgba(232, 72, 12, 0.85);
+  animation: cv2-detonate-reticle-lock 0.3s cubic-bezier(0.34, 1.56, 0.64, 1) 1;
+}
+.cv2-tile-detonate-reticle::before,
+.cv2-tile-detonate-reticle::after {
+  content: "";
+  position: absolute;
+  background: #e8480c;
+}
+.cv2-tile-detonate-reticle::before { top: 50%; left: -6%; right: -6%; height: 2px; transform: translateY(-50%); }
+.cv2-tile-detonate-reticle::after  { left: 50%; top: -6%; bottom: -6%; width: 2px; transform: translateX(-50%); }
+@keyframes cv2-detonate-reticle-lock {
+  0%   { transform: scale(2.4); opacity: 0; }
+  55%  { transform: scale(0.92); opacity: 1; }
+  100% { transform: scale(1); opacity: 1; }
+}
+
+/* Phase 4 -- Blast: an exaggerated squash-pop on the tile itself (its own
+   keyframe now, not a reuse of Barricade's slam -- the user specifically
+   asked for this one to read as bigger, so it gets a sharper squash plus
+   a slight wobble Barricade's never had) plus a camera-flash beat
+   (::before, a near-white flash that decays fast) and a big fire-colored
+   burst ring -- deliberately bigger/hotter than the original version
+   (was 14%->8x; now 16%->11x) since this is meant to be the game's
+   showpiece moment, not a routine impact. */
+.cv2-tile--detonate-blast {
+  animation: cv2-tile-detonate-slam 0.55s cubic-bezier(0.34, 1.7, 0.5, 1) 1;
+}
+@keyframes cv2-tile-detonate-slam {
+  0%   { transform: scale(1) rotate(0deg); }
+  20%  { transform: scale(0.82, 0.72) rotate(-1.5deg); }
+  45%  { transform: scale(1.1, 1.16) rotate(1.5deg); }
+  70%  { transform: scale(0.96, 1.02) rotate(-0.5deg); }
+  100% { transform: scale(1) rotate(0deg); }
+}
+.cv2-tile--detonate-blast::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 10;
+  background: radial-gradient(circle, rgba(255, 255, 240, 0.95) 0%, rgba(255, 214, 92, 0) 70%);
+  pointer-events: none;
+  animation: cv2-detonate-flash 0.35s ease-out 1;
+}
+@keyframes cv2-detonate-flash {
+  0%   { opacity: 1; }
+  100% { opacity: 0; }
+}
+.cv2-tile-detonate-burst {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 16%;
+  height: 16%;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(255, 214, 92, 0.95) 0%, rgba(232, 72, 12, 0.75) 45%, rgba(232, 72, 12, 0) 75%);
+  transform: translate(-50%, -50%) scale(1);
+  animation: cv2-detonate-burst-expand 0.7s ease-out 1;
+  pointer-events: none;
+  z-index: 8;
+}
+@keyframes cv2-detonate-burst-expand {
+  0%   { transform: translate(-50%, -50%) scale(1); opacity: 1; }
+  100% { transform: translate(-50%, -50%) scale(11); opacity: 0; }
+}
+
+/* Crumbling house/hotel icons -- same masked-icon technique
+   cv2-building-icon already uses (a solid silhouette recolored via
+   background-color + mask), but instead of packed into the color band
+   they scatter from the tile's own center and fall/rotate/fade away, each
+   on its own stagger via --i (set inline per icon in BoardClassic.jsx) so
+   a multi-house detonation reads as several distinct pieces of debris
+   instead of one blob. Random-ish per-index horizontal drift and rotation
+   direction (nth-child, alternating sign) rather than every piece falling
+   identically straight down, which would read as a single sprite repeated. */
+.cv2-detonate-crumble {
+  position: absolute;
+  top: 42%;
+  left: 50%;
+  width: clamp(7px, 1.6vw, 14px);
+  aspect-ratio: 1;
+  background-color: #c0392b;
+  -webkit-mask: var(--icon-url) no-repeat center / contain;
+  mask: var(--icon-url) no-repeat center / contain;
+  filter: drop-shadow(0 1px 1px rgba(0, 0, 0, 0.7));
+  pointer-events: none;
+  z-index: 9;
+  animation: cv2-detonate-crumble-fall 0.65s ease-in 1 both;
+  animation-delay: calc(var(--i, 0) * 0.04s);
+}
+.cv2-detonate-crumble--hotel {
+  background-color: #7a1f14;
+  width: clamp(9px, 2vw, 17px);
+}
+.cv2-detonate-crumble:nth-child(odd)  { --drift: 1; }
+.cv2-detonate-crumble:nth-child(even) { --drift: -1; }
+@keyframes cv2-detonate-crumble-fall {
+  0%   { transform: translate(-50%, -50%) rotate(0deg); opacity: 1; }
+  100% { transform: translate(calc(-50% + var(--drift, 1) * 55%), 60%) rotate(calc(var(--drift, 1) * 220deg)); opacity: 0; }
 }
 
 /* ---------- Card reveal (Surprise / Treasure) ---------- */
