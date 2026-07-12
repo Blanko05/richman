@@ -1328,6 +1328,35 @@
 }
 
 /* ---------- H's Hostile Takeover ---------- */
+/* Pre-cast spotlight (user's own request): before the crown/flash
+   sequence even starts, the whole board dims for a couple seconds except
+   the targeted tile, which gets a bright pulsing highlight instead --
+   meant to draw the eye there first, for more emphasis on the target,
+   before the rest of the (otherwise unchanged) sequence plays out. Same
+   ::before-wash-at-z-index-2 approach as barricade/curse's own board dim,
+   but held open for a real couple-second window instead of a quick
+   fade -- see BoardClassic.jsx's SPOTLIGHT_MS. */
+.cv2-board--takeover-spotlight::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.6);
+  z-index: 2;
+  pointer-events: none;
+}
+/* z-index: 3 (same tier as .cv2-tile-selected) lifts the whole tile --
+   background, band, price tag, everything -- above the board-wide dim
+   wash's own z-index: 2, which is what actually makes it "poke through"
+   the darkness rather than getting dimmed along with every other tile. */
+.cv2-tile--takeover-spotlight {
+  z-index: 3;
+  animation: cv2-takeover-spotlight-pulse 1s ease-in-out infinite;
+}
+@keyframes cv2-takeover-spotlight-pulse {
+  0%, 100% { box-shadow: 0 0 10px 2px rgba(255, 215, 90, 0.55), inset 0 0 0 3px rgba(255, 215, 90, 0.85); }
+  50%      { box-shadow: 0 0 22px 8px rgba(255, 215, 90, 0.9), inset 0 0 0 3px rgba(255, 215, 90, 1); }
+}
+
 /* Standing indicator: the tile's own recolor to H's color is already free
    (owned.ownerId flips the instant kingpin.js's active() resolves, and
    ClassicTile's ownerColor already reads straight off it -- no CSS needed

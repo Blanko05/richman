@@ -242,7 +242,7 @@ function HoldingCornerArt({ name, visitingLabel }) {
   );
 }
 
-function ClassicTile({ tile, owned, players, sideLen, onSelect, isSelected, targeting, barricaded, barricadeCasting, detonateGlow, detonateReticle, detonateBlast, detonateMortgagePending, seized, takeoverDrop, takeoverLand, takeoverColorPending, takeoverPrevOwnerId, takeoverRecolor, demolishPendingLevels }) {
+function ClassicTile({ tile, owned, players, sideLen, onSelect, isSelected, targeting, barricaded, barricadeCasting, detonateGlow, detonateReticle, detonateBlast, detonateMortgagePending, seized, takeoverSpotlight, takeoverDrop, takeoverLand, takeoverColorPending, takeoverPrevOwnerId, takeoverRecolor, demolishPendingLevels }) {
   const { id, name, price, amount, groupColor, type, visitingLabel } = tile;
   const { edge, row, col } = getLayout(id, sideLen);
   const hasIcon = type === "treasure" || type === "surprise" || type === "tax" || type === "transit" || type === "rest" || type in CORNER_ICON_SRC;
@@ -290,7 +290,7 @@ function ClassicTile({ tile, owned, players, sideLen, onSelect, isSelected, targ
 
   return (
     <div
-      className={`cv2-tile ${isCorner ? "cv2-corner" : `cv2-side-${edge}`}${type === "transit" ? " cv2-transit" : ""}${type === "rest" ? " cv2-rest" : ""}${isClickable ? " cv2-tile-clickable" : ""}${isSelected ? " cv2-tile-selected" : ""}${targeting ? " cv2-tile-targetable" : ""}${barricadeCasting ? " cv2-tile--barricade-slam" : ""}${detonateGlow ? " cv2-tile--detonate-glow" : ""}${detonateBlast ? " cv2-tile--detonate-blast" : ""}${takeoverLand ? " cv2-tile--takeover-flash" : ""}${takeoverRecolor ? " cv2-tile--takeover-recolor" : ""}`}
+      className={`cv2-tile ${isCorner ? "cv2-corner" : `cv2-side-${edge}`}${type === "transit" ? " cv2-transit" : ""}${type === "rest" ? " cv2-rest" : ""}${isClickable ? " cv2-tile-clickable" : ""}${isSelected ? " cv2-tile-selected" : ""}${targeting ? " cv2-tile-targetable" : ""}${barricadeCasting ? " cv2-tile--barricade-slam" : ""}${detonateGlow ? " cv2-tile--detonate-glow" : ""}${detonateBlast ? " cv2-tile--detonate-blast" : ""}${takeoverSpotlight ? " cv2-tile--takeover-spotlight" : ""}${takeoverLand ? " cv2-tile--takeover-flash" : ""}${takeoverRecolor ? " cv2-tile--takeover-recolor" : ""}`}
       style={{ gridRow: row, gridColumn: col, ...(!isCorner && ownerColor ? { background: ownerColor } : {}) }}
       onClick={isClickable ? (e) => onSelect(id, e.currentTarget, edge) : undefined}
     >
@@ -878,6 +878,11 @@ export default function BoardClassic({ state, myId, tokenMoving, onTokenMovingCh
   const [takeoverLandTileId, setTakeoverLandTileId] = useState(null);
   const [takeoverPending, setTakeoverPending] = useState(null); // { tileId, prevOwnerId }
   const [takeoverRecolorTileId, setTakeoverRecolorTileId] = useState(null);
+  // Pre-cast spotlight (user's own request): the whole board dims except
+  // this tile for a couple seconds BEFORE the drop-then-land sequence
+  // above even starts, to draw the eye to the target first. See the
+  // hostileTakeoverSeq effect further down for the timing.
+  const [takeoverSpotlightTileId, setTakeoverSpotlightTileId] = useState(null);
   const prevPositionsRef = useRef(new Map(players.map((p) => [p.id, p.position])));
   const prevRollSeqRef = useRef(rollSeq);
   const prevJailSeqRef = useRef(jailSeq);
@@ -1153,6 +1158,12 @@ export default function BoardClassic({ state, myId, tokenMoving, onTokenMovingCh
       glideMs: Math.min(LEG_MAX_MS, Math.max(LEG_MIN_MS, leg.tileCount * MS_PER_TILE)) * SPEED_MULTIPLIER,
       glideEase: legEasing(i, arr.length),
     }));
+    // Computed up front (not down by the dust-stop timer, where this used
+    // to live) so playMotor can be told exactly how long this specific
+    // tour's own sequence runs -- a short tour and a near-full-lap one
+    // take very different amounts of real time, and motor.mp3's own
+    // length has nothing to do with either.
+    const totalGlideMs = legs.reduce((sum, leg) => sum + leg.glideMs, 0);
 
     // Bus icon + blue engine glow (PlayerToken.jsx's isBusRiding) and the
     // movingIds lock both start immediately, before the departure pause
@@ -1161,7 +1172,7 @@ export default function BoardClassic({ state, myId, tokenMoving, onTokenMovingCh
     // just the glide portion.
     setMovingIds((s) => new Set(s).add(casterId));
     setBusRidingId(casterId);
-    playMotor();
+    playMotor((DEPARTURE_DELAY_MS + totalGlideMs) / 1000);
 
     // Every demolished tile is suppressed from the very first render after
     // this broadcast lands -- the server has already reduced owned.houses
@@ -1218,7 +1229,6 @@ export default function BoardClassic({ state, myId, tokenMoving, onTokenMovingCh
     // bounce/settle after it (LANDING_MS) -- the bus has already stopped
     // translating by then, so trailing dust past that point would read as
     // dust with nothing moving to kick it up.
-    const totalGlideMs = legs.reduce((sum, leg) => sum + leg.glideMs, 0);
     timers.push(setTimeout(() => setBusDustId(null), DEPARTURE_DELAY_MS + totalGlideMs));
 
     return () => timers.forEach(clearTimeout);
@@ -1438,6 +1448,13 @@ export default function BoardClassic({ state, myId, tokenMoving, onTokenMovingCh
     prevHostileTakeoverSeqRef.current = hostileTakeoverSeq;
     if (!lastHostileTakeover) return;
     const { tileId, previousOwnerId } = lastHostileTakeover;
+    // User's own request: before the crown/flash sequence even starts, the
+    // whole board dims for a couple seconds except the targeted tile
+    // (which gets a bright highlight instead), meant to draw the eye there
+    // BEFORE the rest of the sequence plays -- everything below this is
+    // otherwise unchanged from before, just pushed back by this one flat
+    // offset.
+    const SPOTLIGHT_MS = 2000;
     // Tuned against takeover.mp3's own impact beat -- if the sting's
     // "landing" moment doesn't line up with the crown's own landing once
     // this actually plays, adjust DROP_MS to match rather than the
@@ -1450,21 +1467,31 @@ export default function BoardClassic({ state, myId, tokenMoving, onTokenMovingCh
     const LAND_MS = 400;
     const RECOLOR_MS = 550;
 
-    playHostileTakeover();
-    setTakeoverDropTileId(tileId);
+    setTakeoverSpotlightTileId(tileId);
+    // Suppressed from the very start, same as before this pass -- the
+    // tile's real color doesn't matter visually while the board is
+    // dimmed, but the reveal still needs to be held back consistently
+    // all the way to land, just across a longer total window now.
     setTakeoverPending({ tileId, prevOwnerId: previousOwnerId });
 
     const timers = [];
+    timers.push(setTimeout(() => {
+      setTakeoverSpotlightTileId(null);
+      playHostileTakeover();
+      setTakeoverDropTileId(tileId);
+    }, SPOTLIGHT_MS));
+
+    const dropStart = SPOTLIGHT_MS;
     timers.push(setTimeout(() => {
       setTakeoverDropTileId(null);
       setTakeoverLandTileId(tileId);
       setTakeoverPending(null);
       setTakeoverRecolorTileId(tileId);
       setBoardShaking(true);
-    }, DROP_MS));
-    timers.push(setTimeout(() => setBoardShaking(false), DROP_MS + LAND_MS));
-    timers.push(setTimeout(() => setTakeoverLandTileId(null), DROP_MS + LAND_MS));
-    timers.push(setTimeout(() => setTakeoverRecolorTileId(null), DROP_MS + RECOLOR_MS));
+    }, dropStart + DROP_MS));
+    timers.push(setTimeout(() => setBoardShaking(false), dropStart + DROP_MS + LAND_MS));
+    timers.push(setTimeout(() => setTakeoverLandTileId(null), dropStart + DROP_MS + LAND_MS));
+    timers.push(setTimeout(() => setTakeoverRecolorTileId(null), dropStart + DROP_MS + RECOLOR_MS));
     return () => timers.forEach(clearTimeout);
   }, [hostileTakeoverSeq, lastHostileTakeover]);
 
@@ -1507,7 +1534,7 @@ export default function BoardClassic({ state, myId, tokenMoving, onTokenMovingCh
     <div className="cv2-root" style={{ width: "100%", height: "100%" }}>
       <div
         ref={boardRef}
-        className={`cv2-board${boardShaking ? " cv2-board--shake" : ""}${barricadeCastTileId != null ? " cv2-board--barricade-dim" : ""}${curseCastEvent ? " cv2-board--curse-dim" : ""}${detonateAlarm ? " cv2-board--detonate-alarm" : ""}`}
+        className={`cv2-board${boardShaking ? " cv2-board--shake" : ""}${barricadeCastTileId != null ? " cv2-board--barricade-dim" : ""}${curseCastEvent ? " cv2-board--curse-dim" : ""}${detonateAlarm ? " cv2-board--detonate-alarm" : ""}${takeoverSpotlightTileId != null ? " cv2-board--takeover-spotlight" : ""}`}
         style={{
           display: "grid",
           gridTemplateColumns: gridTemplate,
@@ -1545,6 +1572,7 @@ export default function BoardClassic({ state, myId, tokenMoving, onTokenMovingCh
             detonateBlast={detonateBlast?.tileId === tile.id ? detonateBlast : null}
             detonateMortgagePending={detonateMortgagePendingTileId === tile.id}
             seized={hostileTakeover?.tileId === tile.id}
+            takeoverSpotlight={takeoverSpotlightTileId === tile.id}
             takeoverDrop={takeoverDropTileId === tile.id}
             takeoverLand={takeoverLandTileId === tile.id}
             takeoverColorPending={takeoverPending?.tileId === tile.id}

@@ -3111,6 +3111,60 @@ select {
   50%      { filter: drop-shadow(0 1px 2px rgba(0,0,0,0.6)) drop-shadow(0 0 5px rgba(139,26,26,0.9)); }
 }
 
+/* Z's Curse standing indicator, bigger/harder-to-miss half (user's own
+   request) -- darkens the whole card and lays a chain over it, on top of
+   everything else in the row (name, badges, balance), not just the
+   smaller pulsing skull badge above. position: relative here is what the
+   chain wrapper below anchors to. */
+.panel-player-row.cursed {
+  position: relative;
+}
+.panel-player-row.cursed::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: rgba(12, 4, 8, 0.55);
+  border-radius: inherit;
+  pointer-events: none;
+  z-index: 1;
+}
+/* Own wrapper (rather than clipping via .panel-player-row's own overflow)
+   specifically so the row's own hard-offset box-shadow -- drawn outside
+   its border box -- is never at risk of being clipped by the same
+   overflow rule that needs to clip the chain images to the card's
+   rounded corners. */
+.panel-cursed-chains {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  border-radius: inherit;
+  pointer-events: none;
+  z-index: 2;
+}
+/* chains.png is a single diagonal chain in a SQUARE image, centered over
+   the card. Used to be two copies (one mirrored) crossed into an X --
+   user's own call to drop back to just one after seeing it in practice.
+
+   Two earlier approaches at sizing this both broke (see progress.md):
+   sizing off the row's WIDTH while staying square meant the wrapper's
+   overflow: hidden only ever showed a tiny, over-zoomed crop from the
+   middle (a solid black blob, not a visible chain); object-fit: fill
+   then tried to stretch that same square across the card's much-wider-
+   than-tall real aspect ratio, badly distorting the round links into
+   flat ellipses. This version does neither: height (not width) is sized
+   off the row, width stays `auto` so the image keeps its own square
+   aspect ratio undistorted. */
+.panel-cursed-chain {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  height: 230%;
+  width: auto;
+  aspect-ratio: 1;
+  transform: translate(-50%, -50%);
+  filter: drop-shadow(0 2px 3px rgba(0, 0, 0, 0.75)) brightness(1.2);
+}
+
 .panel-turn-countdown {
   display: flex;
   align-items: center;

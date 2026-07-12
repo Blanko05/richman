@@ -122,11 +122,40 @@ export const playExplosion      = makeClipPlayer("/sounds/boom.mp3", 1);
 export const playHostileTakeover = makeClipPlayer("/sounds/takeover.mp3", 0.9);
 
 // SD's Wrecking Tour departure -- the bus revving up during the pre-glide
-// pause (wreckingTourSeq/lastWreckingTour, see BoardClassic.jsx's dedicated
-// effect), replacing the plain move-swoosh every other move uses. Also
-// closes out the "punchier departure sound" item from abilities.md's
-// brainstorm table.
-export const playMotor           = makeClipPlayer("/sounds/motor.mp3", 0.9);
+// pause, then running under the whole glide (wreckingTourSeq/
+// lastWreckingTour, see BoardClassic.jsx's dedicated effect), replacing
+// the plain move-swoosh every other move uses. Also closes out the
+// "punchier departure sound" item from abilities.md's brainstorm table.
+// Takes an explicit durationSec (the pre-departure pause + the tour's own
+// glide time, which varies a lot -- a short tour near tile 6 is much
+// shorter than a near-full-lap one) and schedules a real stop + short
+// fade-out at that point, same reasoning/pattern as playSirenAlarm below
+// -- motor.mp3's own natural length has no relation to how long any given
+// tour's animation actually runs, so without this it kept blaring well
+// past the bus's own arrival (worst on short tours, where the mismatch is
+// most obvious) instead of ending with the sequence. Registered into
+// registeredClipSrcs directly (below) rather than via makeClipPlayer,
+// since this needs its own custom stop/fade logic makeClipPlayer's
+// returned closure doesn't support.
+registeredClipSrcs.push("/sounds/motor.mp3");
+export function playMotor(durationSec) {
+  const c = safeCtx();
+  if (!c) return;
+  loadClipBuffer(c, "/sounds/motor.mp3").then((buffer) => {
+    const node = c.createBufferSource();
+    node.buffer = buffer;
+    const gain = c.createGain();
+    const t0 = c.currentTime;
+    const vol = 0.9 * 0.7;
+    gain.gain.setValueAtTime(vol, t0);
+    gain.gain.setValueAtTime(vol, t0 + durationSec - 0.15);
+    gain.gain.linearRampToValueAtTime(0.0001, t0 + durationSec);
+    node.connect(gain);
+    gain.connect(c.destination);
+    node.start(t0);
+    node.stop(t0 + durationSec);
+  }).catch(() => {});
+}
 
 // Y's Detonate cast -- the alarm-siren wail that opens the whole sequence,
 // before the reticle/blast even start (user's idea, meant to make Detonate

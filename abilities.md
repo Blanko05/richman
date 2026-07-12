@@ -66,6 +66,27 @@ there too for anything non-trivial).
     instant the ability resolved, regardless of where the bus visually
     was yet (`pendingDemolish` in `BoardClassic.jsx`, `demolishPendingLevels`
     prop in `ClassicTile`).
+- **Two Pass 57 bugs fixed (Pass 59):**
+  - **Motor sound outliving the animation.** `playMotor()` used to be a
+    plain one-shot (`makeClipPlayer`), so `motor.mp3`'s own natural length
+    had no relation to how long any given tour's animation actually ran —
+    most obvious on a short tour (SD already close to tile 6), where the
+    motor kept blaring well after the bus had already arrived. Fixed the
+    same way `playSirenAlarm` already handles `siren.mp3` being longer
+    than Detonate's alarm phase: `playMotor` now takes an explicit
+    `durationSec` (the 1.5s pre-departure pause plus that specific tour's
+    own glide time) and schedules a real `AudioBufferSourceNode.stop()` +
+    short fade-out at exactly that point.
+  - **Dust never actually visible.** The puffs were real and animating,
+    but rendered *before* `.cv2-token-inner` in the DOM — and
+    `.cv2-token-face` (the token's own circular face/icon) is an OPAQUE
+    circle filling the token's entire box (`inset: 0`). On same-level
+    stacking, later DOM order paints on top, so the face was painting
+    over nearly all of the dust underneath it — invisible regardless of
+    where the tour ran, since tokens are only 19-39px wide to begin with.
+    Fixed by moving the dust `<span>`s to render *after*
+    `.cv2-token-inner` in `PlayerToken.jsx`, so they paint on top of the
+    face instead of underneath it.
 
 **Still open for Wrecking Tour specifically:** the brainstorm table's
 "bigger crash/screen-shake per building flattened" — each demolish is now
@@ -124,6 +145,15 @@ Copy Cat is left.
   "row" note, which Barricade never needed since it targets a tile, not a
   player. Both read straight off `activeCurses` (already broadcast) — zero
   extra plumbing, same as Barricade's standing icon.
+- **Sidebar row upgraded (Pass 59, user's own request)**: the row itself
+  now darkens (`.panel-player-row.cursed::before`, a dark wash) and gets
+  a chain (`chains.png`, user-supplied) laid over the whole card, on top
+  of the name/badges/balance, not just the smaller pulsing skull badge
+  from before — a bigger, harder-to-miss version of the same signal.
+  Started as two copies (one `scaleX(-1)`-mirrored) crossed into an X;
+  user's own call to drop back to a single chain after seeing both
+  versions in practice. Still driven straight off `activeCurses`, no new
+  broadcast needed.
 - **Payoff moment**: a synthesized "drain" tone (two detuned descending
   sawtooth oscillators, `playCurseDrain`) + a deep purple-red flash on the
   target's own token, *plus* a distinct "💀 -$X" flash on their sidebar row.
@@ -234,17 +264,27 @@ so one new pair covers the whole thing: `room.hostileTakeoverSeq`/
   icon (`crown.png`), read straight off `room.hostileTakeover` — no
   seq/broadcast plumbing needed, same pattern as Barricade's
   `barricaded`/Curse's `isCursed`. `ClassicTile` (`seized` prop).
-- **Cast+payoff moment**: user follow-up request (still same original ask)
-  to make the seizure itself feel more like a real event landing, not a
-  single instant flash — `BoardClassic.jsx` now sequences a **drop-then-
-  land** beat off the one `hostileTakeoverSeq` bump instead:
+- **Cast+payoff moment**: user follow-up requests (still same original
+  ask) to make the seizure itself feel more like a real event landing,
+  not a single instant flash — `BoardClassic.jsx` now sequences a
+  **spotlight-then-drop-then-land** beat off the one `hostileTakeoverSeq`
+  bump:
+  0. **Spotlight** (2s, Pass 59): before anything else starts, the whole
+     board dims (`cv2-board--takeover-spotlight`, a dark wash) except the
+     targeted tile, which gets a bright pulsing gold highlight
+     (`cv2-tile--takeover-spotlight`, lifted to `z-index: 3` — the same
+     tier `.cv2-tile-selected` already uses — specifically so it "pokes
+     through" the wash's own `z-index: 2` instead of getting dimmed along
+     with every other tile) — meant to draw the eye to the target before
+     the rest of the sequence (unchanged, just pushed back by this one
+     flat 2s offset) plays out.
   1. **Drop** (~450ms): the crown scales in from oversized/faded down to
      its resting size (`cv2-takeover-icon--drop`), timed to land as
      `takeover.mp3`'s (`playHostileTakeover`) own impact hits. The tile's
-     real owner-color change is intentionally *suppressed* during this
-     phase — `ClassicTile` shows the previous owner's color (or none)
-     via `takeoverColorPending`/`takeoverPrevOwnerId` instead of snapping
-     to the real one the same frame the crown starts falling.
+     real owner-color change is intentionally *suppressed* the whole time
+     from the spotlight onward — `ClassicTile` shows the previous owner's
+     color (or none) via `takeoverColorPending`/`takeoverPrevOwnerId`
+     instead of snapping to the real one.
   2. **Land** (~400ms): the crown gets its own settle-shake
      (`cv2-takeover-icon--land`), the board gets the shared
      `boardShaking` jolt (reused from Barricade/Detonate), and the tile
@@ -257,10 +297,10 @@ so one new pair covers the whole thing: `room.hostileTakeoverSeq`/
      snap — removed again once its own window elapses so unrelated color
      changes (mortgaging, a future seizure) stay instant snaps.
 
-  Still tile-scoped only, no board-wide dim/wash the way Barricade/Curse/
-  Detonate get — deliberately smaller in scope than Detonate's showpiece,
-  reads as a quick, contained "snatch," just with a proper arrival beat
-  now instead of a single flash.
+  The drop/land/recolor beat itself is still tile-scoped only (unlike
+  the new spotlight phase, which is deliberately board-wide) — smaller in
+  scope than Detonate's showpiece, reads as a quick, contained "snatch"
+  once the spotlight hands off to it.
 
 **Two bugs checked for explicitly before calling this done** (the user
 flagged both up front, since a tile-level standing icon is the same shape

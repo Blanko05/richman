@@ -6,6 +6,14 @@ import ConfirmDialog from "./ConfirmDialog";
 import CharacterRosterModal from "./CharacterRosterModal";
 import { IconClock } from "./icons";
 
+// Z's Curse standing indicator (the two crossed chains, see the
+// panel-cursed-chains block below) -- eager-preloaded same reasoning as
+// BoardClassic.jsx's own barrier.png/reaper.png/crown.png block: a
+// curse's first-ever cast can land at any arbitrary point well into a
+// game, not this panel's own first paint.
+const chainsImg = new Image();
+chainsImg.src = "/chains.png";
+
 function TurnCountdown({ deadline }) {
   const [now, setNow] = useState(Date.now());
   useEffect(() => {
@@ -183,10 +191,11 @@ export default function PlayersPanel({ state, myId, onLeave, theme, onToggleThem
         {sortedPlayers.map((p) => {
           const isCurrent = started && !state.winnerId && currentPlayerId === p.id;
           const isMe = p.id === myId;
+          const isCursed = activeCurses?.some((c) => c.targetId === p.id);
           return (
             <div
               key={p.id}
-              className={`panel-player-row${isCurrent ? " current-turn" : ""}${p.bankrupt ? " bankrupt" : ""}${p.left ? " left" : ""}${onSwitchIdentity ? " switchable" : ""}${playerTargeting ? " targetable" : ""}`}
+              className={`panel-player-row${isCurrent ? " current-turn" : ""}${p.bankrupt ? " bankrupt" : ""}${p.left ? " left" : ""}${onSwitchIdentity ? " switchable" : ""}${playerTargeting ? " targetable" : ""}${isCursed ? " cursed" : ""}`}
               style={isCurrent ? { "--c": p.color } : undefined}
               onClick={
                 playerTargeting ? () => onPlayerTarget(p.id)
@@ -220,7 +229,7 @@ export default function PlayersPanel({ state, myId, onLeave, theme, onToggleThem
                       of this same signal -- kept here too since Curse
                       targets a PLAYER, not a tile, so the sidebar row is
                       just as natural a home for it as the board. */}
-                  {activeCurses?.some((c) => c.targetId === p.id) && (
+                  {isCursed && (
                     <img src="/reaper.png" className="panel-cursed-icon" alt="Cursed" title="Cursed" />
                   )}
                 </div>
@@ -247,6 +256,22 @@ export default function PlayersPanel({ state, myId, onLeave, theme, onToggleThem
                   </span>
                 )}
               </span>
+              {/* Z's Curse standing indicator, bigger/harder-to-miss half
+                  -- darkens the whole card + a chain laid over it,
+                  distinct from (and layered on top of) the smaller
+                  pulsing skull badge above, which stays as the
+                  quick-glance icon. Rendered LAST (not first) among this
+                  row's children so plain DOM/paint order puts it on top
+                  of the name/balance/everything else, no z-index needed
+                  for that part -- only the wash-vs-chain order inside
+                  this wrapper needs one (see the CSS). User's own call to
+                  drop back to a single chain image (was two, mirrored,
+                  forming an X) after seeing it in practice. */}
+              {isCursed && (
+                <div className="panel-cursed-chains">
+                  <img src="/chains.png" className="panel-cursed-chain" alt="" />
+                </div>
+              )}
             </div>
           );
         })}

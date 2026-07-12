@@ -9,6 +9,130 @@ in the same pass.
 
 ---
 
+## Pass 59 — 2026-07-12 — Curse's sidebar chains, Hostile Takeover's pre-cast spotlight, and two Wrecking Tour bugs (motor sound outliving the glide, dust never actually visible)
+
+**Goal:** three user-requested changes, bundled into one pass.
+
+**What was done (assets):** user supplied `chains.png` at the repo root
+(a single diagonal chain image); copied into `client/public/chains.png`
+per the established convention.
+
+**1. Curse's sidebar row — bigger standing indicator:** the row itself
+now darkens (`.panel-player-row.cursed::before`, a dark wash) and gets
+two crossed chains laid over the whole card — `chains.png` used twice,
+once plain and once `scaleX(-1)`-mirrored, forming the "X" from a single
+asset rather than needing a second one. Rendered on top of the
+name/badges/balance (last child in DOM, not first, so plain paint order
+puts it above everything), layered above the existing smaller pulsing
+skull badge, which stays as the quick-glance icon. Own wrapper
+(`.panel-cursed-chains`, `overflow: hidden`) rather than clipping via the
+row's own `overflow`, specifically so the row's hard-offset box-shadow
+(drawn outside its border box) is never at risk from the same rule
+needed to clip the chain images to the card's rounded corners. Still
+driven straight off `activeCurses` — no new broadcast needed, same as
+the skull badge before it. `PlayersPanel.jsx` / `App.css`.
+
+**2. Hostile Takeover's pre-cast spotlight (Pass 55/56's sequence gets a
+new phase 0):** before the crown/flash sequence even starts, the whole
+board now dims for 2s except the targeted tile, which gets a bright
+pulsing gold highlight instead — meant to draw the eye to the target
+before the rest of the (otherwise unchanged) sequence plays, "for more
+emphasis on the tile targeted." `BoardClassic.jsx`'s `hostileTakeoverSeq`
+effect gained a flat `SPOTLIGHT_MS = 2000` offset applied to every
+existing timer, plus a new `takeoverSpotlightTileId` state. The
+highlighted tile is lifted to `z-index: 3` (the same tier
+`.cv2-tile-selected` already uses) specifically so it "pokes through"
+the board-wide dim wash's own `z-index: 2` instead of getting dimmed
+along with everything else — same z-index-tier reasoning already
+documented for every other tile-level overlay on this board.
+
+**3. Two Wrecking Tour bugs from Pass 57, both fixed:**
+- **Motor sound outliving the animation.** `playMotor()` was a plain
+  one-shot (`makeClipPlayer`), so `motor.mp3`'s own natural length had no
+  relation to how long any given tour's animation actually ran — worst
+  (most noticeable) on a short tour, where the motor kept blaring well
+  after the bus had already arrived. Fixed the same way `playSirenAlarm`
+  already handles `siren.mp3` outlasting Detonate's alarm phase:
+  `playMotor` now takes an explicit `durationSec` (the 1.5s pre-departure
+  pause plus that specific tour's own glide time, computed once up front
+  in `BoardClassic.jsx` rather than down where the old dust-stop timer
+  used to compute it) and schedules a real
+  `AudioBufferSourceNode.stop()` + short fade-out at exactly that point.
+- **Dust never actually visible, regardless of where the tour ran.** The
+  puffs were genuinely rendering and animating, but as children placed
+  *before* `.cv2-token-inner` in the DOM — and `.cv2-token-face` (the
+  token's own circular face/icon) is an OPAQUE circle filling the
+  token's entire box (`inset: 0`). Same-level stacking paints later DOM
+  order on top, so the face was painting over nearly all of the dust
+  sitting underneath it — tokens are only 19-39px wide, so "behind the
+  face" was effectively "invisible" no matter how far the puffs drifted.
+  Fixed by moving the dust `<span>`s to render *after*
+  `.cv2-token-inner` in `PlayerToken.jsx`, so they paint on top of the
+  face instead of underneath it.
+
+**Why these calls:** both Wrecking Tour fixes follow patterns already
+established elsewhere in this same codebase rather than inventing new
+ones — the motor-sound fix is a direct copy of `playSirenAlarm`'s own
+stop+fade mechanism, and the spotlight's z-index tier reuses
+`.cv2-tile-selected`'s existing precedent for "needs to rise above the
+board-wide dim wash." The dust bug in particular was a real lesson in
+verifying paint order for tiny (19-39px) elements specifically — an
+element with a correct DOM/CSS implementation on paper can still be
+invisible if a sibling happens to be an opaque shape covering
+effectively its whole bounding box.
+
+**State at end of pass:** server `npm test` 173/173 (unchanged — no
+server-side changes this pass). Client `vite build` clean, `oxlint`
+unchanged (same 4 pre-existing warnings, none new). Not visually verified
+by the assistant — user's own dev-server convention for this project —
+user to confirm: the chains actually read as an "X" across the card
+(untested exact sizing/angle on a real row, `.panel-cursed-chain`'s
+`width: 85%` was a reasonable-default guess, not measured against the
+row's real dimensions), the 2s spotlight duration feels right (not too
+long/short), and — most importantly for the two bug fixes — that the
+motor sound now actually stops in sync with the bus's arrival and the
+dust trail is now genuinely visible while riding.
+
+**Immediate follow-up, same pass session:** the `width: 85%` guess above
+was in fact wrong, confirmed by a screenshot the user shared — the card
+showed a solid black diamond, not a diagonal chain. Root cause: the
+image was sized relative to the row's WIDTH but stayed square (its own
+intrinsic aspect ratio), against a row only ~60px tall — 85% of a ~350px-
+wide row is ~300px square, and `.panel-cursed-chains`' own
+`overflow: hidden` was clipping that huge square down to just a ~60px-
+tall horizontal slice through its middle. Since the chain art's links are
+fairly thick relative to the source image, that slice landed on 2-3
+overlapping links merging into a solid blob instead of showing any actual
+diagonal. Fixed by switching to `inset: 0; width: 100%; height: 100%;
+object-fit: fill` -- stretches the image to the card's own real
+rectangle (ignoring its square intrinsic ratio) so the built-in
+corner-to-corner diagonal always spans the actual visible card, at
+whatever shallow angle matches its real aspect ratio, instead of cropping
+an oversized square and hoping the crop landed somewhere sensible.
+
+**Second follow-up, same pass session:** `object-fit: fill` above was
+ALSO wrong, again confirmed by a screenshot — stretching the square
+image to the card's much-wider-than-tall real aspect ratio badly
+distorted the round chain links into flat ellipses, producing a "pinched
+diamond" look at the center crossing rather than a recognizable chain.
+Replaced both approaches with one that doesn't resize based on the row's
+width at all: `height: 230%` (sized off the row instead), `width: auto`
+with `aspect-ratio: 1` (keeps the image's own square proportions
+undistorted), both copies simply centered on top of each other. Reads as
+a bold, undistorted, centered X mark rather than a literal edge-to-edge
+diagonal across the whole card -- doesn't need to span the full card
+width to read as "this card is locked down."
+
+**Third follow-up, same pass session:** user's own call, after seeing
+the two-chain X in practice -- dropped back to a single `chains.png`
+copy instead of two crossed ones. Simplified `PlayersPanel.jsx` (one
+`<img>`, not two) and `App.css` (`.panel-cursed-chain--a`/`--b` removed,
+just one `.panel-cursed-chain` rule with the centering transform folded
+back into it) accordingly; sizing approach (`height: 230%`, `width:
+auto`, `aspect-ratio: 1`) unchanged, still undistorted.
+
+---
+
 ## Pass 58 — 2026-07-12 — Sound cleanup (buy/auction/money-change), and Detonate's forced-mortgage now syncs to the blast
 
 **Goal:** three small user-requested changes, bundled into one pass.

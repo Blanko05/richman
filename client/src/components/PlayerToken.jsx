@@ -31,15 +31,6 @@ export default function PlayerToken({ player, stackIndex, stackTotal, leftPct, t
 
   return (
     <span className="cv2-token" style={wrapStyle} title={player.name}>
-      {/* Wrecking Tour dust trail -- rendered BEFORE cv2-token-inner (not
-          after) so plain DOM/paint order puts it behind the bus face
-          rather than on top, with no z-index needed. Only true once the
-          bus is actually gliding (BoardClassic's busDustId, set after the
-          pre-departure pause), not during the parked revving window --
-          see that effect's own comment for why. */}
-      {isBusDust && Array.from({ length: 5 }, (_, i) => (
-        <span key={i} className="cv2-token-dust" style={{ "--i": i }} />
-      ))}
       <span className={innerCls} style={innerStyle}>
         {isBusRiding ? (
           // Wrecking Tour: swap out whatever the rider's own icon/face is
@@ -63,6 +54,20 @@ export default function PlayerToken({ player, stackIndex, stackTotal, leftPct, t
           </span>
         )}
       </span>
+      {/* Wrecking Tour dust trail -- rendered AFTER cv2-token-inner (not
+          before), unlike the first attempt at this: cv2-token-face is an
+          OPAQUE circle filling the token's entire box (inset: 0), so with
+          dust painted behind it (earlier in the DOM, same auto stacking
+          level) the face swallowed nearly all of it -- tokens are only
+          19-39px wide, so "behind the face" was effectively "invisible"
+          regardless of how far the puffs drifted. Painting on top instead
+          guarantees they're actually visible. Only true once the bus is
+          actually gliding (BoardClassic's busDustId, set after the
+          pre-departure pause), not during the parked revving window --
+          see that effect's own comment for why. */}
+      {isBusDust && Array.from({ length: 5 }, (_, i) => (
+        <span key={i} className="cv2-token-dust" style={{ "--i": i }} />
+      ))}
       {/* Z's Curse standing indicator -- sibling of cv2-token-inner (not
           nested inside it) so it never gets swept up in the inner
           element's own bob/floating/celebrate/barricade-snap animations,
