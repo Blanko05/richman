@@ -36,6 +36,21 @@ test("passive: sellHouse triggers Y's $50 bank payout, regardless of who demolis
   assert.equal(wreckerPlayer.balance, wreckerBefore + 50, "Y collects a flat $50 from the bank");
 });
 
+test("passive: the $50 bank payout is logged, not silent -- the passive was correctly firing all along but gave no visible sign it had (playtesting bug)", () => {
+  const room = makeRoom(["Demolisher", "Wrecker"]);
+  after(() => cleanup(room));
+  const wreckerPlayer = room.playerById("p1");
+  wreckerPlayer.character = "Y";
+  const [tileId] = ownTwoTileGroup(room, "p0", 1);
+
+  room.sellHouse("p0", tileId);
+
+  assert.ok(
+    room.log.some((line) => line.includes("Wrecker") && line.includes("$50") && line.includes("bank")),
+    "a log line now records the passive collecting its cut"
+  );
+});
+
 test("passive: mortgageProperty also triggers Y's $50 bank payout", () => {
   const room = makeRoom(["Mortgager", "Wrecker"]);
   after(() => cleanup(room));

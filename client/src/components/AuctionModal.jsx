@@ -7,13 +7,13 @@ import TransitCardDetail from "./TransitCardDetail";
 
 const BID_INCREMENTS = [1, 10, 100];
 
-function AuctionTimer({ deadline }) {
+function AuctionTimer({ deadline, clockOffsetMs = 0 }) {
   const [now, setNow] = useState(Date.now());
   useEffect(() => {
     const interval = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(interval);
   }, []);
-  const secondsLeft = Math.max(0, Math.round((deadline - now) / 1000));
+  const secondsLeft = Math.max(0, Math.round((deadline - (now + clockOffsetMs)) / 1000));
   const urgent = secondsLeft <= 3;
   return (
     <div className={`auction-timer${urgent ? " urgent" : ""}`}>
@@ -33,7 +33,7 @@ function AuctionTileCard({ tile }) {
   return <PropertyCardDetail tile={tile} showActions={false} />;
 }
 
-function AuctionCard({ auction, board, players, myId }) {
+function AuctionCard({ auction, board, players, myId, clockOffsetMs }) {
   const tile = board[auction.tileId];
   const me = players.find((p) => p.id === myId);
   const highBidder = players.find((p) => p.id === auction.highestBidderId);
@@ -58,7 +58,7 @@ function AuctionCard({ auction, board, players, myId }) {
       </div>
 
       <div className="auction-bid-col">
-        <AuctionTimer deadline={auction.deadline} />
+        <AuctionTimer deadline={auction.deadline} clockOffsetMs={clockOffsetMs} />
 
         <div className="auction-highbid">
           {highBidder ? (
@@ -118,7 +118,7 @@ function AuctionCard({ auction, board, players, myId }) {
 // unconditionally in App.jsx and self-gates on whether any auction is live,
 // since there's no "close" while one is active for you to bid or pass on.
 export default function AuctionModal({ state, myId }) {
-  const { auctions, board, players } = state;
+  const { auctions, board, players, clockOffsetMs } = state;
   if (!auctions || auctions.length === 0) return null;
 
   return (
@@ -131,7 +131,7 @@ export default function AuctionModal({ state, myId }) {
           {auctions.map((a, i) => (
             <div key={a.id} className={i > 0 ? "auction-card-block" : undefined}>
               {auctions.length > 1 && <p className="trade-section-label">{board[a.tileId].name}</p>}
-              <AuctionCard auction={a} board={board} players={players} myId={myId} />
+              <AuctionCard auction={a} board={board} players={players} myId={myId} clockOffsetMs={clockOffsetMs} />
             </div>
           ))}
         </div>

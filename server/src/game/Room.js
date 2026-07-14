@@ -1108,6 +1108,16 @@ export class Room {
     if (this.hostileTakeover?.tileId === tileId) return { error: "A seized tile can't be built on" };
     if (owned.mortgaged) return { error: "You can't build on a mortgaged property" };
     const groupTiles = this._propertiesByGroup(tile.group);
+    // A tile currently under Hostile Takeover shouldn't count toward "own the
+    // full group" for ANY tile in that group, not just itself -- otherwise a
+    // player who genuinely owns the rest of a group can seize the one tile
+    // they're missing (Hostile Takeover flips ownership synchronously, same
+    // ownership map buyHouse reads) and temporarily satisfy this check to
+    // build, even though the tile above already refuses to let them build ON
+    // the seized tile itself (playtesting bug).
+    if (this.hostileTakeover && groupTiles.some((t) => t.id === this.hostileTakeover.tileId)) {
+      return { error: "You must own the full color group" };
+    }
     const ownsAll = groupTiles.every((t) => this.ownership[t.id]?.ownerId === playerId);
     if (!ownsAll) return { error: "You must own the full color group" };
     if (owned.houses >= 5) return { error: "Already at max (hotel)" };
@@ -1202,14 +1212,22 @@ export class Room {
   // The holder's own credit is curse-aware (self-contained -- nothing later
   // claws back from the holder over this specific credit, unlike the
   // fromPlayerId deduction, which is a raw expense and never cursed).
-  bankMediatedCut(holderId, amount, fromPlayerId = null) {
+  // `reason` is a short human-readable phrase (e.g. "turf rent cut", "the
+  // Wrecker's passive") logged so a percentage/flat cut has some visible
+  // trace beyond a bare balance change -- previously this credited the
+  // holder completely silently, which made a real, working passive (most
+  // notably reported for Y's flat $50) read as "doesn't work" in practice
+  // since nothing on screen ever said it fired (playtesting).
+  bankMediatedCut(holderId, amount, fromPlayerId = null, reason = null) {
     if (amount <= 0) return;
+    const holder = this.playerById(holderId);
     this.settleEarning(holderId, () => {
-      this.playerById(holderId).balance += amount;
+      holder.balance += amount;
     }, { isBankPayout: true });
     if (fromPlayerId) {
       this.playerById(fromPlayerId).balance -= amount;
     }
+    if (reason) this.pushLog(`${holder.name} collected $${amount} from the bank (${reason}).`);
   }
 
   // Settles an earning event for recipientId: run `fn` (which may credit them
@@ -1281,9 +1299,26 @@ export class Room {
 
   // Reverts H's Hostile Takeover (abilities/kingpin.js) once the caster's own
   // next turn comes around (or immediately, if the caster goes bankrupt/leaves
-  // first -- see clearAbilityEffectsFrom) -- restores whatever ownership
-  // record the tile had before (or unowned, if it had none), including each
-  // side's properties list.
+  // first -- see clearAbilityEffectsFrom) -- hands the tile back to its
+  // previous owner (or unowned, if it had none), including each side's
+  // properties list.
+  //
+  // Two bugs fixed here (playtesting): this used to wholesale restore the
+  // `previousOwnership` snapshot captured back at seizure time, which is
+  // wrong on two counts --
+  //   1. If the previous owner left/went bankrupt at any point DURING the
+  //      seizure window, restoring the snapshot handed the tile straight
+  //      back to a player no longer in the game instead of leaving it
+  //      unowned.
+  //   2. The snapshot is frozen at seizure time, so anything that changed
+  //      the tile's LIVE state while H controlled it (most notably Y's
+  //      Detonate demolishing/mortgaging it) got silently reverted along
+  //      with the ownership -- the damage just vanished the moment control
+  //      passed back.
+  // Fixed by only swapping the ownerId back on the tile's current live
+  // record (preserving whatever houses/mortgaged state it picked up during
+  // the takeover), and checking the previous owner's status as of THIS
+  // moment (not back at seizure time) before handing it back at all.
   revertHostileTakeover() {
     const { tileId, previousOwnership } = this.hostileTakeover;
     const current = this.ownership[tileId];
@@ -1291,10 +1326,10 @@ export class Room {
       const currentOwner = this.playerById(current.ownerId);
       if (currentOwner) currentOwner.properties = currentOwner.properties.filter((id) => id !== tileId);
     }
-    if (previousOwnership) {
-      this.ownership[tileId] = previousOwnership;
-      const prevOwner = this.playerById(previousOwnership.ownerId);
-      if (prevOwner && !prevOwner.properties.includes(tileId)) prevOwner.properties.push(tileId);
+    const prevOwner = previousOwnership ? this.playerById(previousOwnership.ownerId) : null;
+    if (prevOwner && !prevOwner.left && !prevOwner.bankrupt) {
+      this.ownership[tileId] = { houses: 0, ...current, ownerId: prevOwner.id };
+      if (!prevOwner.properties.includes(tileId)) prevOwner.properties.push(tileId);
     } else {
       delete this.ownership[tileId];
     }
@@ -1602,20 +1637,55 @@ export class Room {
   // mortgage, sell houses, or trade your way back to solvent (none of those are
   // turn-gated, so that's possible even before your own turn comes back around).
   // This method still does the actual forfeiture *when called*; what changed is
-  // when it's called -- see finishTurn, the only remaining call site.
+  // when it's called -- see finishTurn, the only remaining call site for the
+  // debt-triggered path. voluntaryBankrupt (below) is the other caller, for a
+  // player choosing to forfeit outright rather than being forced into it.
   checkBankruptcy(player) {
     if (player.balance < 0 && !player.bankrupt) {
-      player.bankrupt = true;
-      for (const tileId of player.properties) {
-        delete this.ownership[tileId];
-      }
-      player.properties = [];
-      this.clearTradesInvolving(player.id);
-      this.clearAuctionBidsFrom(player.id);
-      this.clearAbilityEffectsFrom(player.id);
-      this.pushLog(`${player.name} went bankrupt!`);
-      this.checkWinner();
+      this.forceBankruptcy(player, `${player.name} went bankrupt!`);
     }
+  }
+
+  // The actual forfeiture, shared by both the debt-triggered path
+  // (checkBankruptcy) and the voluntary one (voluntaryBankrupt): releases
+  // every owned property back to the bank, marks them bankrupt, and clears
+  // anything that would otherwise dangle referencing them (trades, auction
+  // bids, ability effects) -- same cleanup kickPlayer does for a `left`
+  // player, minus setting `left` itself. Deliberately does NOT touch
+  // `left` -- unlike a kick, a bankrupt player stays a real (non-`left`)
+  // seat in `players[]`, still visible and still able to watch the rest of
+  // the game play out, just permanently out of the active rotation.
+  forceBankruptcy(player, logMessage) {
+    if (player.bankrupt) return;
+    player.bankrupt = true;
+    for (const tileId of player.properties) {
+      delete this.ownership[tileId];
+    }
+    player.properties = [];
+    this.clearTradesInvolving(player.id);
+    this.clearAuctionBidsFrom(player.id);
+    this.clearAbilityEffectsFrom(player.id);
+    this.pushLog(logMessage);
+    this.checkWinner();
+  }
+
+  // Player-facing "give up" action -- lets someone forfeit outright at any
+  // point (not turn-gated: there's no reason to make a player wait for their
+  // own turn just to bail), regardless of their actual balance. Distinct
+  // from the debt-triggered path (checkBankruptcy/finishTurn), which only
+  // ever fires automatically for a player already underwater -- this one is
+  // a deliberate choice, and the player doing it isn't necessarily in debt
+  // at all. If they happen to be the current player mid-turn, clears
+  // whatever pending action was theirs and hands play to the next active
+  // seat, same as kickPlayer does for a disconnect/leave.
+  voluntaryBankrupt(playerId) {
+    const player = this.playerById(playerId);
+    if (!player || player.bankrupt || player.left) return { error: "You can't do that right now" };
+    if (!this.started) return { error: "Game hasn't started" };
+    if (this.pendingAction?.playerId === playerId) this.pendingAction = null;
+    this.forceBankruptcy(player, `${player.name} chose to go bankrupt.`);
+    if (!this.winnerId && this.currentPlayer()?.id === playerId) this.endTurn();
+    return { ok: true };
   }
 
   // Ends the current player's turn via the player-facing playerEndTurn action.
@@ -1696,6 +1766,15 @@ export class Room {
   toState() {
     return {
       code: this.code,
+      // Lets the client correct for clock skew against its own Date.now()
+      // when counting down a server-issued absolute deadline (auction/turn/
+      // trade timers) -- without this, any meaningful drift between the
+      // server's and a client's system clock permanently throws off those
+      // countdowns, most visibly on the auction timer's short 10s window
+      // (a few seconds of skew reads as a permanent 0 there, while the same
+      // skew on the 4-minute turn timer is only a few seconds off out of
+      // 240 and barely noticeable).
+      serverNow: Date.now(),
       hostId: this.hostId,
       mode: this.mode,
       started: this.started,

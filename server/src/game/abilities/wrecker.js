@@ -36,10 +36,10 @@ export const wrecker = {
   activeCooldown: (result) => DETONATE_COOLDOWN_BY_LEVELS[result.levelsRemoved],
   passives: {
     onDemolish(room, { holder }) {
-      room.bankMediatedCut(holder.id, 50);
+      room.bankMediatedCut(holder.id, 50, null, "the Wrecker's passive");
     },
     onMortgage(room, { holder }) {
-      room.bankMediatedCut(holder.id, 50);
+      room.bankMediatedCut(holder.id, 50, null, "the Wrecker's passive");
     },
   },
   active(room, caster, { tileId } = {}) {

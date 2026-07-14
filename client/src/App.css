@@ -1445,8 +1445,22 @@
   padding-right: 2px;
 }
 
+.my-properties-card {
+  display: flex;
+}
+
+/* Property cards and station (transit) cards render a different amount of
+   content (transit has fewer rent tiers, no house tiers at all) so their
+   natural heights differ -- left unconstrained, a grid row mixing the two
+   types stretched the grid cell (default grid align-items: stretch) but not
+   this inner card, leaving it visibly shorter/misaligned next to its
+   siblings. min-height, not a fixed height, so a wider future card type
+   isn't clipped -- set to comfortably clear a full PropertyCardDetail (the
+   tallest variant: 4 house-rent rows + hotel row + 3 footnotes), which
+   every row's grid-stretch then carries to any shorter sibling. */
 .my-properties-card .pcard-detail {
   width: 100%;
+  min-height: 360px;
   box-shadow: 3px 4px 0 #111;
 }
 
@@ -2054,6 +2068,11 @@
 .trade-direction-badge.outgoing {
   background: var(--panel);
   color: var(--text-dim);
+}
+.trade-direction-badge.public {
+  background: transparent;
+  color: var(--text-dim);
+  font-style: italic;
 }
 
 /* Step 1: pick player */
@@ -2682,6 +2701,16 @@ select {
   50%      { box-shadow: 0 0 14px color-mix(in srgb, var(--c, var(--accent)) 75%, transparent); }
 }
 
+/* A trade between two other players -- visible (trades are public, read-only
+   for everyone else in the room) but visually recessed so "yours" still
+   stands out from "everyone else's, just visible". */
+.open-trade-row.public {
+  opacity: 0.6;
+}
+.open-trade-row.public:hover {
+  opacity: 0.85;
+}
+
 .open-trade-name {
   font-size: 12px;
   font-weight: 700;
@@ -2831,6 +2860,27 @@ select {
 }
 .panel-leave-btn:hover { background: rgba(180,30,30,0.4); }
 .panel-leave-btn:active { transform: translate(1px, 1px); }
+
+/* Amber, not red -- distinct from Leave's red (Leave forfeits the seat
+   entirely; Go Bankrupt keeps it, just out of the active rotation). */
+.panel-bankrupt-btn {
+  background: rgba(201,150,10,0.2);
+  border-color: rgba(201,150,10,0.4);
+  color: #e0a838;
+}
+.panel-bankrupt-btn:hover { background: rgba(201,150,10,0.35); }
+
+.panel-spectator-banner {
+  text-align: center;
+  font-size: 11px;
+  font-weight: 700;
+  font-style: italic;
+  padding: 8px 10px;
+  background: rgba(201,150,10,0.12);
+  border: 2px solid rgba(201,150,10,0.35);
+  border-radius: 8px;
+  color: var(--text-dim);
+}
 
 .panel-winner-banner {
   text-align: center;

@@ -14,14 +14,14 @@ import { IconClock } from "./icons";
 const chainsImg = new Image();
 chainsImg.src = "/chains.png";
 
-function TurnCountdown({ deadline }) {
+function TurnCountdown({ deadline, clockOffsetMs = 0 }) {
   const [now, setNow] = useState(Date.now());
   useEffect(() => {
     const interval = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(interval);
   }, []);
   if (!deadline) return null;
-  const secondsLeft = Math.max(0, Math.round((deadline - now) / 1000));
+  const secondsLeft = Math.max(0, Math.round((deadline - (now + clockOffsetMs)) / 1000));
   const mins = Math.floor(secondsLeft / 60);
   const secs = String(secondsLeft % 60).padStart(2, "0");
   return (
@@ -31,9 +31,14 @@ function TurnCountdown({ deadline }) {
   );
 }
 
-export default function PlayersPanel({ state, myId, onLeave, theme, onToggleTheme, tokenMoving, onSwitchIdentity, playerTargeting, onPlayerTarget }) {
-  const { players, roomCode, hostId, started, winnerId, activeCurses, curseDrainSeq, lastCurseDrain } = state;
+export default function PlayersPanel({ state, myId, onLeave, onBankrupt, theme, onToggleTheme, tokenMoving, onSwitchIdentity, playerTargeting, onPlayerTarget }) {
+  // `roomCode` -- not `code` -- for local clarity only; the server field
+  // itself is `state.code` (see Room.toState()), aliased here since this
+  // component's own `code` name would otherwise shadow nothing but reads
+  // confusingly next to `roomCode`'s label/value markup below.
+  const { players, code: roomCode, hostId, started, winnerId, activeCurses, curseDrainSeq, lastCurseDrain } = state;
   const isHost = hostId === myId;
+  const me = players.find((p) => p.id === myId);
   const currentPlayerId = started ? players[state.turnIndex]?.id : null;
   const activePlayers = players.filter((p) => !p.left);
   const allIconsChosen = activePlayers.every((p) => p.icon);
@@ -47,6 +52,7 @@ export default function PlayersPanel({ state, myId, onLeave, theme, onToggleThem
   }
 
   const [confirmingLeave, setConfirmingLeave] = useState(false);
+  const [confirmingBankrupt, setConfirmingBankrupt] = useState(false);
   const [showRoster, setShowRoster] = useState(false);
   const [sortByTurn, setSortByTurn] = useState(false);
   const sortedPlayers = sortByTurn ? players : [...players].sort((a, b) => b.balance - a.balance);
@@ -128,6 +134,11 @@ export default function PlayersPanel({ state, myId, onLeave, theme, onToggleThem
         </div>
         <div className="panel-header-actions">
           <ThemeToggle theme={theme} onToggle={onToggleTheme} inline />
+          {started && me && !me.bankrupt && !me.left && (
+            <button className="panel-leave-btn panel-bankrupt-btn" onClick={() => setConfirmingBankrupt(true)}>
+              Go Bankrupt
+            </button>
+          )}
           <button className="panel-leave-btn" onClick={() => setConfirmingLeave(true)}>Leave</button>
         </div>
       </div>
@@ -144,7 +155,29 @@ export default function PlayersPanel({ state, myId, onLeave, theme, onToggleThem
         />
       )}
 
+      {confirmingBankrupt && (
+        <ConfirmDialog
+          title="Go bankrupt?"
+          message="You'll forfeit your properties and be out of the active rotation for good -- but you keep your seat and can watch the rest of the game. This can't be undone."
+          confirmLabel="Go Bankrupt"
+          cancelLabel="Stay"
+          danger
+          onCancel={() => setConfirmingBankrupt(false)}
+          onConfirm={() => { setConfirmingBankrupt(false); onBankrupt(); }}
+        />
+      )}
+
       {showRoster && <CharacterRosterModal state={state} onClose={() => setShowRoster(false)} />}
+
+      {/* A bankrupt player keeps their seat (unlike `left`) specifically so
+          they can keep watching the rest of the game -- this banner is the
+          one reminder that they're spectating, not playing, since every
+          action control elsewhere already just quietly stops being offered
+          to them (isMyTurn can never land on a bankrupt seat again, and the
+          server rejects any action from one regardless). */}
+      {started && me?.bankrupt && (
+        <div className="panel-spectator-banner">You're bankrupt — spectating the rest of the game.</div>
+      )}
 
       {/* Winner banner */}
       {winnerId && (
@@ -234,7 +267,7 @@ export default function PlayersPanel({ state, myId, onLeave, theme, onToggleThem
                   )}
                 </div>
               </div>
-              {isCurrent && <TurnCountdown deadline={state.turnDeadline} />}
+              {isCurrent && <TurnCountdown deadline={state.turnDeadline} clockOffsetMs={state.clockOffsetMs} />}
               <span className={`panel-player-balance${p.balance < 0 ? " negative" : ""}`}>
                 ${p.balance}
                 {flashes[p.id] && (

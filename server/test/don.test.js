@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { makeRoom, cleanup } from "./helpers.js";
 
 // D -- The Don. Passive: 30% bank-mediated cut of rent in his turf zone
-// (tiles 13/14/16), 50% bank-mediated cut of any tax payment. Active:
+// (tiles 13/14/16), 30% bank-mediated cut of any tax payment. Active:
 // Barricade -- a one-shot wall lasting until D's own next turn comes around,
 // forward-movement interception only (decisions.md).
 
@@ -71,7 +71,7 @@ test("passive: D owning his own turf tile nets no extra cut -- he just keeps the
   assert.equal(donPlayer.balance, donBefore + rent, "self-owned turf: full rent, no additional cut on top");
 });
 
-test("passive: 50% tax cut is bank-mediated, taxed player pays the normal amount unaffected", () => {
+test("passive: 30% tax cut is bank-mediated, taxed player pays the normal amount unaffected", () => {
   const room = makeRoom(["Taxed", "Don"]);
   after(() => cleanup(room));
   const taxed = room.playerById("p0");
@@ -85,7 +85,7 @@ test("passive: 50% tax cut is bank-mediated, taxed player pays the normal amount
   room.movePlayer(taxed, 1); // tile 4, tax tile, amount 100
 
   assert.equal(taxed.balance, taxedBefore - 100);
-  assert.equal(donPlayer.balance, donBefore + 50);
+  assert.equal(donPlayer.balance, donBefore + 30);
 });
 
 test("active: Barricade stops forward movement short and resolves the barricaded tile's own action, no extra toll", () => {

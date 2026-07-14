@@ -332,6 +332,6 @@ test("stacking: D's tax cut and Z's tax cut both independently apply to the same
   room.movePlayer(taxed, 1); // tile 4, tax tile, amount 100
 
   assert.equal(taxed.balance, taxedBefore - 100, "taxed player's bill is unaffected by either cut stacking");
-  assert.equal(donPlayer.balance, 1500 + 50);
+  assert.equal(donPlayer.balance, 1500 + 30);
   assert.equal(enforcerPlayer.balance, 1500 + 30);
 });

@@ -24,10 +24,10 @@ export const enforcer = {
   activeCooldown: 7,
   passives: {
     onTaxPaid(room, { holder, amount }) {
-      room.bankMediatedCut(holder.id, Math.floor(amount * 0.3));
+      room.bankMediatedCut(holder.id, Math.floor(amount * 0.3), null, "tax cut");
     },
     onTradeCompleted(room, { holder, totalTradeValue }) {
-      room.bankMediatedCut(holder.id, Math.floor(totalTradeValue * 0.3));
+      room.bankMediatedCut(holder.id, Math.floor(totalTradeValue * 0.3), null, "trade cut");
     },
   },
   active(room, caster, { targetId } = {}) {

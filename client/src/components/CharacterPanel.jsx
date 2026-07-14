@@ -9,7 +9,7 @@ const TARGET_HINTS = {
 // For a "none" targetType (Wrecking Tour) Activate fires immediately; for
 // "tile"/"player" it hands off to App.jsx's shared targeting state machine,
 // which is what actually submits once a tile/player is clicked elsewhere.
-export default function CharacterPanel({ state, myId, onUseAbility, targeting, abilityError, onStartTargeting, onCancelTargeting }) {
+export default function CharacterPanel({ state, myId, onUseAbility, targeting, abilityError, onStartTargeting, onCancelTargeting, tokenMoving }) {
   const me = state.players.find((p) => p.id === myId);
 
   if (!me?.character) return null;
@@ -17,6 +17,15 @@ export default function CharacterPanel({ state, myId, onUseAbility, targeting, a
   const info = state.characters?.[me.character];
   const ability = state.abilities?.[me.character];
   const ready = me.abilityCooldown <= 0;
+  // tokenMoving also covers a still-playing ability animation, not just a
+  // token glide (see BoardClassic's abilityAnimating) -- blocked here too so
+  // a second ability can't be cast mid-sequence and race the first one's own
+  // timers over shared visual state (e.g. boardShaking), on top of a move
+  // already blocking it the same way. Kept separate from `ready` (cooldown
+  // only) so the header still reads "✓ Ready" instead of falsely claiming
+  // turns are still left on cooldown while a move/animation is just
+  // temporarily blocking the button.
+  const canActivate = ready && !tokenMoving;
   const isTargeting = !!targeting;
 
   function handleActivateClick() {
@@ -55,13 +64,15 @@ export default function CharacterPanel({ state, myId, onUseAbility, targeting, a
         </div>
       )}
 
-      {isTargeting ? (
+      {me.bankrupt ? (
+        <p className="character-panel-error">Bankrupt -- spectating, no more abilities to use.</p>
+      ) : isTargeting ? (
         <div className="character-panel-targeting">
           <p className="character-panel-targeting-hint">{targetingHint()}</p>
           <button className="character-panel-cancel" onClick={onCancelTargeting}>Cancel</button>
         </div>
       ) : (
-        <button className="character-panel-activate" disabled={!ready} onClick={handleActivateClick}>
+        <button className="character-panel-activate" disabled={!canActivate} onClick={handleActivateClick}>
           Activate Ability
         </button>
       )}

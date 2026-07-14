@@ -25,21 +25,29 @@ function chipColor(tile) {
   return tile.groupColor || (tile.type === "transit" ? "#1684b7" : "#888");
 }
 
-// Reduces a trade (always stored fromId/offer.. toId/request..) down to
-// "what do I give / get" from the perspective of whoever's looking at it --
-// lets the same read-only view render correctly for both the proposer and
-// the recipient without the caller worrying about which side is which.
+// Reduces a trade (always stored fromId/offer.. toId/request..) down to a
+// left/right layout from the perspective of whoever's looking at it. A party
+// (proposer or recipient) always sees themselves on the left ("You give" /
+// "You get"), same as before. A non-party spectator -- trades are now public,
+// read-only for everyone in the room -- sees a neutral fromId-on-the-left
+// layout instead, since there's no "you" to frame it around.
 function perspectiveOf(trade, myId) {
-  const mine = trade.fromId === myId;
+  const isProposer = trade.fromId === myId;
+  const isRecipient = trade.toId === myId;
+  const isParty = isProposer || isRecipient;
+  const leftIsProposer = isParty ? isProposer : true;
   return {
-    mine,
-    otherId: mine ? trade.toId : trade.fromId,
-    giveProperties: mine ? trade.offerProperties : trade.requestProperties,
-    giveMoney: mine ? trade.offerMoney : trade.requestMoney,
-    giveJailCard: mine ? trade.offerJailCard : trade.requestJailCard,
-    getProperties: mine ? trade.requestProperties : trade.offerProperties,
-    getMoney: mine ? trade.requestMoney : trade.offerMoney,
-    getJailCard: mine ? trade.requestJailCard : trade.offerJailCard,
+    isParty,
+    isProposer,
+    isRecipient,
+    leftId: leftIsProposer ? trade.fromId : trade.toId,
+    rightId: leftIsProposer ? trade.toId : trade.fromId,
+    leftProperties: leftIsProposer ? trade.offerProperties : trade.requestProperties,
+    leftMoney: leftIsProposer ? trade.offerMoney : trade.requestMoney,
+    leftJailCard: leftIsProposer ? trade.offerJailCard : trade.requestJailCard,
+    rightProperties: leftIsProposer ? trade.requestProperties : trade.offerProperties,
+    rightMoney: leftIsProposer ? trade.requestMoney : trade.offerMoney,
+    rightJailCard: leftIsProposer ? trade.requestJailCard : trade.offerJailCard,
   };
 }
 
@@ -314,19 +322,26 @@ function TradeForm({ board, ownership, players, myId, otherId, onSubmit, submitL
   );
 }
 
-// Read-only view of a single open trade (incoming or outgoing), styled the
-// same as the editable TradeForm above so opening a trade from the list
-// reads as "the same screen, just locked". The recipient gets
-// Accept/Decline/Counter; the proposer (viewing their own pending offer)
-// just gets Cancel. Counter hands off to TradeModal to swap this view for
-// an editable TradeForm instead of toggling any state in here.
-function TradeView({ trade, board, players, myId, onBack, onCounter, onClose }) {
+// Read-only view of a single open trade (incoming, outgoing, or -- trades
+// are public, visible to the whole room -- someone else's entirely). The
+// recipient gets Accept/Decline/Counter; the proposer (viewing their own
+// pending offer) just gets Cancel; a non-party spectator gets neither, only
+// a read-only look at the same screen. Counter hands off to TradeModal to
+// swap this view for an editable TradeForm instead of toggling any state in
+// here.
+function TradeView({ trade, board, players, myId, onBack, onCounter, onClose, clockOffsetMs }) {
   const [error, setError] = useState("");
-  const { mine, otherId, giveProperties, giveMoney, giveJailCard, getProperties, getMoney, getJailCard } = perspectiveOf(trade, myId);
-  const me = players.find((p) => p.id === myId);
-  const other = players.find((p) => p.id === otherId);
-  const giveTiles = giveProperties.map((id) => board[id]).filter(Boolean);
-  const getTiles = getProperties.map((id) => board[id]).filter(Boolean);
+  const {
+    isParty, isProposer, leftId, rightId,
+    leftProperties, leftMoney, leftJailCard,
+    rightProperties, rightMoney, rightJailCard,
+  } = perspectiveOf(trade, myId);
+  const left = players.find((p) => p.id === leftId);
+  const right = players.find((p) => p.id === rightId);
+  const leftTiles = leftProperties.map((id) => board[id]).filter(Boolean);
+  const rightTiles = rightProperties.map((id) => board[id]).filter(Boolean);
+  const leftLabel = isParty ? "You give" : `${left?.name ?? "?"} gives`;
+  const rightLabel = isParty ? "You get" : `${right?.name ?? "?"} gives`;
 
   function respond(accept) {
     setError("");
@@ -348,15 +363,15 @@ function TradeView({ trade, board, players, myId, onBack, onCounter, onClose }) 
     <>
       <div className="trade-form-header">
         <div className="trade-form-player-chip">
-          <PlayerAvatar player={me} sizeClass="swatch" />
-          <span className="trade-form-player-name">{me?.name} (you)</span>
-          <span className="trade-form-balance-badge">${me?.balance ?? 0}</span>
+          <PlayerAvatar player={left} sizeClass="swatch" />
+          <span className="trade-form-player-name">{left?.name}{leftId === myId ? " (you)" : ""}</span>
+          <span className="trade-form-balance-badge">${left?.balance ?? 0}</span>
         </div>
         <span className="trade-form-vs">⇄</span>
         <div className="trade-form-player-chip">
-          <PlayerAvatar player={other} sizeClass="swatch" />
-          <span className="trade-form-player-name">{other?.name}</span>
-          <span className="trade-form-balance-badge">${other?.balance ?? 0}</span>
+          <PlayerAvatar player={right} sizeClass="swatch" />
+          <span className="trade-form-player-name">{right?.name}{rightId === myId ? " (you)" : ""}</span>
+          <span className="trade-form-balance-badge">${right?.balance ?? 0}</span>
         </div>
         <button onClick={onBack} style={{ marginLeft: "auto", fontSize: 12, padding: "4px 10px" }}>
           ← Back
@@ -365,38 +380,42 @@ function TradeView({ trade, board, players, myId, onBack, onCounter, onClose }) 
 
       {trade.deadline && (
         <p className="trade-deadline-banner">
-          Expires in <TradeCountdown deadline={trade.deadline} />
+          Expires in <TradeCountdown deadline={trade.deadline} clockOffsetMs={clockOffsetMs} />
         </p>
       )}
 
       <div className="trade-cols-2">
         <div className="trade-col-side">
-          <div className="trade-col-label">You give</div>
-          {giveMoney > 0 && <StaticMoneyRow amount={giveMoney} />}
-          {giveTiles.length === 0 && giveMoney === 0 && !giveJailCard && (
+          <div className="trade-col-label">{leftLabel}</div>
+          {leftMoney > 0 && <StaticMoneyRow amount={leftMoney} />}
+          {leftTiles.length === 0 && leftMoney === 0 && !leftJailCard && (
             <p className="hint" style={{ margin: 0, fontSize: 12 }}>Nothing</p>
           )}
-          <GroupedChips tiles={giveTiles} renderChip={(t) => <StaticPropChip key={t.id} tile={t} />} />
-          {giveJailCard && <StaticJailCardChip />}
+          <GroupedChips tiles={leftTiles} renderChip={(t) => <StaticPropChip key={t.id} tile={t} />} />
+          {leftJailCard && <StaticJailCardChip />}
         </div>
 
         <div className="trade-col-divider" />
 
         <div className="trade-col-side">
-          <div className="trade-col-label">You get</div>
-          {getMoney > 0 && <StaticMoneyRow amount={getMoney} />}
-          {getTiles.length === 0 && getMoney === 0 && !getJailCard && (
+          <div className="trade-col-label">{rightLabel}</div>
+          {rightMoney > 0 && <StaticMoneyRow amount={rightMoney} />}
+          {rightTiles.length === 0 && rightMoney === 0 && !rightJailCard && (
             <p className="hint" style={{ margin: 0, fontSize: 12 }}>Nothing</p>
           )}
-          <GroupedChips tiles={getTiles} renderChip={(t) => <StaticPropChip key={t.id} tile={t} />} />
-          {getJailCard && <StaticJailCardChip />}
+          <GroupedChips tiles={rightTiles} renderChip={(t) => <StaticPropChip key={t.id} tile={t} />} />
+          {rightJailCard && <StaticJailCardChip />}
         </div>
       </div>
 
       {error && <p className="error" style={{ margin: 0 }}>{error}</p>}
 
       <div className="trade-modal-footer">
-        {mine ? (
+        {!isParty ? (
+          <p className="hint" style={{ margin: 0 }}>
+            Only {left?.name} and {right?.name} can act on this trade.
+          </p>
+        ) : isProposer ? (
           <button className="primary" onClick={cancelOffer}>Cancel Trade</button>
         ) : (
           <>
@@ -411,11 +430,14 @@ function TradeView({ trade, board, players, myId, onBack, onCounter, onClose }) 
 }
 
 export default function TradeModal({ state, myId, onClose, initialScreen }) {
-  const { board, ownership, players, trades } = state;
+  const { board, ownership, players, trades, clockOffsetMs } = state;
   // { type: "menu" } | { type: "create" } | { type: "propose", playerId } | { type: "view", tradeId } | { type: "counter", tradeId }
   const [screen, setScreen] = useState(initialScreen || { type: "menu" });
   const others = players.filter((p) => p.id !== myId && !p.bankrupt && !p.left);
-  const openTrades = trades.filter((t) => t.toId === myId || t.fromId === myId);
+  // Trades are public -- every active player can see every open trade in the
+  // room, read-only unless they're one of its two actual parties (TradeView
+  // gates Accept/Decline/Counter/Cancel on that, not this list).
+  const openTrades = trades;
 
   // A trade a screen is pointing at can vanish out from under it (accepted,
   // declined, or canceled by the other side) -- fall back to the menu
@@ -485,17 +507,22 @@ export default function TradeModal({ state, myId, onClose, initialScreen }) {
                   <div className="trade-player-list">
                     {openTrades.map((t) => {
                       const incomingTrade = t.toId === myId;
+                      const outgoingTrade = t.fromId === myId;
+                      const isParty = incomingTrade || outgoingTrade;
+                      const fromP = players.find((p) => p.id === t.fromId);
+                      const toP = players.find((p) => p.id === t.toId);
                       const other = players.find((p) => p.id === (incomingTrade ? t.fromId : t.toId));
+                      const label = incomingTrade ? `Offer from ${other?.name}`
+                        : outgoingTrade ? `Offer to ${other?.name}`
+                        : `${fromP?.name ?? "?"} ⇄ ${toP?.name ?? "?"}`;
+                      const badgeClass = incomingTrade ? "incoming" : outgoingTrade ? "outgoing" : "public";
+                      const badgeText = incomingTrade ? "Incoming" : outgoingTrade ? "Pending" : "Public";
                       return (
                         <button key={t.id} className="trade-player-btn" onClick={() => setScreen({ type: "view", tradeId: t.id })}>
-                          <PlayerAvatar player={other} sizeClass="swatch" />
-                          <span className="trade-player-btn-name">
-                            {incomingTrade ? `Offer from ${other?.name}` : `Offer to ${other?.name}`}
-                          </span>
-                          {t.deadline && <TradeCountdown deadline={t.deadline} />}
-                          <span className={`trade-direction-badge${incomingTrade ? " incoming" : " outgoing"}`}>
-                            {incomingTrade ? "Incoming" : "Pending"}
-                          </span>
+                          <PlayerAvatar player={isParty ? other : fromP} sizeClass="swatch" />
+                          <span className="trade-player-btn-name">{label}</span>
+                          {t.deadline && <TradeCountdown deadline={t.deadline} clockOffsetMs={clockOffsetMs} />}
+                          <span className={`trade-direction-badge ${badgeClass}`}>{badgeText}</span>
                         </button>
                       );
                     })}
@@ -542,6 +569,7 @@ export default function TradeModal({ state, myId, onClose, initialScreen }) {
               onBack={() => setScreen({ type: "menu" })}
               onCounter={() => setScreen({ type: "counter", tradeId: activeTrade.id })}
               onClose={onClose}
+              clockOffsetMs={clockOffsetMs}
             />
           )}
 

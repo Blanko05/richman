@@ -101,3 +101,50 @@ test("bankrupting the second-to-last player declares the survivor the winner ins
   assert.equal(room.winnerId, bob.id);
   assert.equal(room.turnIndex, 0, "no next player to advance to -- the game already ended");
 });
+
+test("voluntaryBankrupt: a player can forfeit outright at any time, solvent or not, without waiting for their own turn", () => {
+  const room = makeRoom(["Alice", "Bob", "Carol"]);
+  after(() => cleanup(room));
+  const alice = room.players[0];
+  alice.balance = 900; // solvent -- this isn't the debt-triggered path
+  alice.properties = [1];
+  room.ownership[1] = { ownerId: "p0", houses: 0 };
+  room.turnIndex = 1; // it's Bob's turn, not Alice's
+
+  const result = room.voluntaryBankrupt("p0");
+
+  assert.deepEqual(result, { ok: true });
+  assert.equal(alice.bankrupt, true);
+  assert.equal(alice.left, false, "stays a real seat -- not kicked, unlike leaveRoom/kickPlayer");
+  assert.equal(room.ownership[1], undefined, "properties released back to the bank");
+  assert.equal(room.turnIndex, 1, "wasn't Alice's turn -- play doesn't get shoved along on her behalf");
+});
+
+test("voluntaryBankrupt: forfeiting on your own turn clears any pending action and hands play to the next active seat", () => {
+  const room = makeRoom(["Alice", "Bob", "Carol"]);
+  after(() => cleanup(room));
+  const alice = room.players[0];
+  alice.balance = 1500;
+  room.pendingAction = { type: "awaitBuy", tileId: 1, playerId: "p0" };
+
+  const result = room.voluntaryBankrupt("p0");
+
+  assert.deepEqual(result, { ok: true });
+  assert.equal(alice.bankrupt, true);
+  assert.equal(room.pendingAction, null, "the pending action that belonged to her is cleared");
+  assert.equal(room.turnIndex, 1, "turn advances past her, same as any other exit mid-turn");
+});
+
+test("voluntaryBankrupt: rejects a repeat call, and rejects a player who already left", () => {
+  const room = makeRoom(["Alice", "Bob"]);
+  after(() => cleanup(room));
+  room.players[0].balance = 1500;
+
+  room.voluntaryBankrupt("p0");
+  assert.deepEqual(room.voluntaryBankrupt("p0"), { error: "You can't do that right now" });
+
+  const room2 = makeRoom(["Alice", "Bob", "Carol"]);
+  after(() => cleanup(room2));
+  room2.kickPlayer("p0", "left the game");
+  assert.deepEqual(room2.voluntaryBankrupt("p0"), { error: "You can't do that right now" });
+});

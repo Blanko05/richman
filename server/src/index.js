@@ -189,6 +189,14 @@ io.on("connection", (socket) => {
     cleanupIfDone(room);
   });
 
+  socket.on("voluntaryBankrupt", (cb) => {
+    const room = getRoom(socket);
+    if (!room) return cb?.({ error: "Room not found" });
+    const result = room.voluntaryBankrupt(getPlayerId(socket));
+    if (result.ok) broadcastState(room.code);
+    cb?.(result);
+  });
+
   socket.on("startGame", (cb) => {
     const room = getRoom(socket);
     const playerId = getPlayerId(socket);

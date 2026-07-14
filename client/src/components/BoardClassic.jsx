@@ -177,21 +177,26 @@ function computeBackwardPath(from, to, totalTiles) {
 // passes over -- the rim is straight between corners, so gliding straight
 // to each corner (rather than snapping tile by tile) is what lets the
 // token move continuously instead of visibly stopping along the way. Each
-// leg also carries how many original tiles it covers, so a long straight
-// run can be given proportionally more time than a short one -- otherwise
-// a leg crossing 10 tiles would take exactly as long as one crossing 1.
+// leg also carries its start tile (fromTileId) alongside its end (tileId)
+// and how many original tiles it covers (tileCount) -- fromTileId is what
+// lets a caller compute the leg's real on-screen distance (see
+// legDistancePct below), not just how many board tiles it nominally spans.
 // Splits an already-known tile sequence into corner-to-corner legs (the
 // grouping step of computeLegWaypoints, factored out so a caller that
 // already has its own authoritative path -- Wrecking Tour's server-computed
 // route, see the wreckingTourSeq effect below -- can reuse it directly
-// instead of re-deriving the same path from a from/to pair.
-function groupPathIntoLegs(path, sideLen) {
+// instead of re-deriving the same path from a from/to pair. `from` is the
+// tile the whole path starts from (not itself part of `path`, which only
+// ever holds tiles actually stepped onto) -- needed to give the very first
+// leg a real fromTileId too, not just the legs after it.
+function groupPathIntoLegs(path, sideLen, from) {
   const legs = [];
   let legStart = 0;
   path.forEach((tileId, idx) => {
     const isCorner = tileId % sideLen === 0;
     if (isCorner || idx === path.length - 1) {
-      legs.push({ tileId, tileCount: idx + 1 - legStart });
+      const fromTileId = legStart === 0 ? from : path[legStart - 1];
+      legs.push({ tileId, fromTileId, tileCount: idx + 1 - legStart });
       legStart = idx + 1;
     }
   });
@@ -202,7 +207,25 @@ function computeLegWaypoints(from, to, sideLen, totalTiles, backward = false) {
   const path = backward
     ? computeBackwardPath(from, to, totalTiles)
     : computeForwardPath(from, to, totalTiles);
-  return groupPathIntoLegs(path, sideLen);
+  return groupPathIntoLegs(path, sideLen, from);
+}
+
+// A leg's real on-screen travel distance (percent of the board's own
+// width/height), via the same row/col -> trackCenters conversion
+// PlayerToken's own left/top positioning uses. This is NOT proportional to
+// tileCount -- the grid's corner (rim) tracks are wider than its inner ones
+// (RIM_FR vs INNER_FR, see BoardClassic), so a leg that starts or ends at a
+// corner covers more real distance than the same tileCount anywhere else on
+// the board. Every leg is a single straight run by construction (it only
+// ever spans one edge, turning at a corner instead of through one -- see
+// groupPathIntoLegs), so a straight Euclidean distance between its two
+// endpoints is exact, not an approximation.
+function legDistancePct(fromTileId, toTileId, sideLen, trackCenters) {
+  const a = getLayout(fromTileId, sideLen);
+  const b = getLayout(toTileId, sideLen);
+  const dx = trackCenters[b.col - 1] - trackCenters[a.col - 1];
+  const dy = trackCenters[b.row - 1] - trackCenters[a.row - 1];
+  return Math.hypot(dx, dy);
 }
 
 // A single leg eases in and out on its own (feels natural in the very
@@ -741,6 +764,17 @@ export default function BoardClassic({ state, myId, tokenMoving, onTokenMovingCh
   const MS_PER_TILE = 70;
   const LEG_MIN_MS = 220;
   const LEG_MAX_MS = 650;
+  // Converts MS_PER_TILE (a per-tile-COUNT rate) into a real per-percent
+  // -of-board rate, calibrated against an ordinary inner-to-inner tile step
+  // (trackCenters[2]-trackCenters[1], both inner tracks) so the common case
+  // -- a leg that never touches a corner -- still takes exactly the same
+  // ~70ms/tile it always has. Legs that start or end at a corner naturally
+  // take proportionally more time now instead of the same time for more
+  // real distance -- see legDistancePct's own comment for why tileCount
+  // alone was never the right unit to time a glide by (playtesting bug:
+  // tokens visibly sped up crossing every corner, both in ordinary
+  // movement and Wrecking Tour's bus).
+  const MS_PER_PCT = MS_PER_TILE / (trackCenters[2] - trackCenters[1]);
   const [visualPositions, setVisualPositions] = useState(
     () => new Map(players.map((p) => [p.id, { tileId: p.position, glideMs: 0, glideEase: "ease" }]))
   );
@@ -912,7 +946,7 @@ export default function BoardClassic({ state, myId, tokenMoving, onTokenMovingCh
     const resolve = (path) =>
       path.map((leg, i, arr) => ({
         tileId: leg.tileId,
-        glideMs: Math.min(LEG_MAX_MS, Math.max(LEG_MIN_MS, leg.tileCount * MS_PER_TILE)),
+        glideMs: Math.min(LEG_MAX_MS, Math.max(LEG_MIN_MS, legDistancePct(leg.fromTileId, leg.tileId, sideLen, trackCenters) * MS_PER_PCT)),
         glideEase: legEasing(i, arr.length),
         pauseBeforeMs: 0,
       }));
@@ -1146,16 +1180,16 @@ export default function BoardClassic({ state, myId, tokenMoving, onTokenMovingCh
     prevWreckingTourSeqRef.current = wreckingTourSeq;
     const tour = lastWreckingTour;
     if (!tour) return;
-    const { casterId, path, demolished } = tour;
+    const { casterId, startTileId, path, demolished } = tour;
 
     // Applied AFTER the usual min/max clamp (not before) so both a short
     // one-tile leg and a long straight run stay proportionally slower,
     // not just re-clamped back into the same window.
     const DEPARTURE_DELAY_MS = 1500;
     const SPEED_MULTIPLIER = 2;
-    const legs = groupPathIntoLegs(path, sideLen).map((leg, i, arr) => ({
+    const legs = groupPathIntoLegs(path, sideLen, startTileId).map((leg, i, arr) => ({
       ...leg,
-      glideMs: Math.min(LEG_MAX_MS, Math.max(LEG_MIN_MS, leg.tileCount * MS_PER_TILE)) * SPEED_MULTIPLIER,
+      glideMs: Math.min(LEG_MAX_MS, Math.max(LEG_MIN_MS, legDistancePct(leg.fromTileId, leg.tileId, sideLen, trackCenters) * MS_PER_PCT)) * SPEED_MULTIPLIER,
       glideEase: legEasing(i, arr.length),
     }));
     // Computed up front (not down by the dust-stop timer, where this used
@@ -1232,7 +1266,13 @@ export default function BoardClassic({ state, myId, tokenMoving, onTokenMovingCh
     timers.push(setTimeout(() => setBusDustId(null), DEPARTURE_DELAY_MS + totalGlideMs));
 
     return () => timers.forEach(clearTimeout);
-  }, [wreckingTourSeq, lastWreckingTour, board.length, sideLen]);
+    // trackCenters/MS_PER_PCT added purely to satisfy the linter -- both are
+    // deterministic functions of board.length (already a dep, and it never
+    // actually changes mid-game, same reasoning documented on the Detonate
+    // effect's own dep array), so neither ever actually differs between
+    // renders and including them can't cause a spurious mid-sequence restart
+    // the way a genuinely volatile value (visualPositions) would.
+  }, [wreckingTourSeq, lastWreckingTour, board.length, sideLen, trackCenters, MS_PER_PCT]);
 
   // D's Barricade -- cast moment (abilities.md brainstorm table). Unlike
   // Wrecking Tour, Room.js has no dedicated seq field for the cast itself
@@ -1373,7 +1413,19 @@ export default function BoardClassic({ state, myId, tokenMoving, onTokenMovingCh
 
     playSirenAlarm(ALARM_MS / 1000);
     setDetonateAlarm(true);
-    if (lastDetonate.forcedMortgage) setDetonateMortgagePendingTileId(lastDetonate.tileId);
+    if (lastDetonate.forcedMortgage) {
+      setDetonateMortgagePendingTileId(lastDetonate.tileId);
+    } else if (lastDetonate.levelsRemoved > 0) {
+      // Same pending-suppression pattern as the forced-mortgage branch above
+      // and Wrecking Tour's own per-tile demolish sync (this reuses that
+      // exact mechanism, ClassicTile's `demolishPendingLevels` prop) --
+      // owned.houses is already 0 server-side by the time this broadcast
+      // lands (synchronous resolution, same as everywhere else this pattern
+      // applies), so without holding it back here the target tile's house/
+      // hotel badge would drop to 0 the instant the alarm phase starts,
+      // ~9 seconds before the blast that's actually supposed to reveal it.
+      setPendingDemolish((m) => new Map(m).set(lastDetonate.tileId, lastDetonate.levelsRemoved));
+    }
     const timers = [];
 
     // Crosshair scan+lock: fast constant-speed hops around the board
@@ -1416,6 +1468,12 @@ export default function BoardClassic({ state, myId, tokenMoving, onTokenMovingCh
       setDetonateBlast(lastDetonate);
       setDetonateCrosshairPos(null);
       setDetonateMortgagePendingTileId(null);
+      setPendingDemolish((m) => {
+        if (!m.has(lastDetonate.tileId)) return m;
+        const next = new Map(m);
+        next.delete(lastDetonate.tileId);
+        return next;
+      });
       playExplosion();
       setBoardShaking(true);
     }, blastStart));
@@ -1514,9 +1572,31 @@ export default function BoardClassic({ state, myId, tokenMoving, onTokenMovingCh
   const currentPlayerId = players[turnIndex]?.id;
   const currentTokenMoving = movingIds.has(currentPlayerId);
 
+  // True for as long as ANY ability's own local animation sequence is still
+  // playing -- derived straight off the same state each ability's own effect
+  // already sets/clears via its own timers (not new state of its own, so
+  // there's no separate start/stop bookkeeping that could fall out of sync
+  // with what's actually on screen). Unlike a move, none of these abilities
+  // (Detonate's ~9.5s showpiece most of all) ever touch movingIds/
+  // tokenMoving, so without this nothing was actually stopping a player
+  // from ending their turn -- or the game from processing anyone else's
+  // action -- while the animation was still mid-flight (playtesting: "the
+  // ability's damage is done and animation state on the board is locked").
+  // The turn ending doesn't cancel any of these effects (their own
+  // dependency arrays are already stable across an unrelated broadcast --
+  // see the detonateSeq effect's own comment on excluding visualPositions
+  // for exactly this reason), so the sequence itself was always going to
+  // finish playing regardless; the actual bug was nothing held the player
+  // back from moving on before it did.
+  const abilityAnimating =
+    barricadeCastTileId != null || barricadeSnapId != null || boardShaking ||
+    curseCastEvent != null || curseDrainTargetId != null ||
+    detonateAlarm || detonateGlowTileId != null || detonateReticleTileId != null || detonateBlast != null ||
+    takeoverSpotlightTileId != null || takeoverDropTileId != null || takeoverLandTileId != null || takeoverRecolorTileId != null;
+
   useEffect(() => {
-    onTokenMovingChange?.(currentTokenMoving);
-  }, [currentTokenMoving, onTokenMovingChange]);
+    onTokenMovingChange?.(currentTokenMoving || abilityAnimating);
+  }, [currentTokenMoving, abilityAnimating, onTokenMovingChange]);
 
   const selectedTile = selectedTileId != null ? board[selectedTileId] : null;
   const selectedOwned = selectedTileId != null ? ownership[selectedTileId] : null;
@@ -1696,8 +1776,11 @@ export default function BoardClassic({ state, myId, tokenMoving, onTokenMovingCh
               // hiding it again. `tokenMoving` is detected synchronously in
               // App.jsx's raw socket handler (in the same batch as the state
               // update itself), so it's already true on that first render.
-              if (isMyTurn && (tokenMoving || currentTokenMoving)) {
-                return <p className="cv2-turn-status">Moving…</p>;
+              // Also blocked on abilityAnimating -- same reasoning, for an
+              // ability's own local showpiece (Detonate's ~9.5s sequence
+              // most of all) instead of a move's glide (playtesting bug).
+              if (isMyTurn && (tokenMoving || currentTokenMoving || abilityAnimating)) {
+                return <p className="cv2-turn-status">{abilityAnimating && !(tokenMoving || currentTokenMoving) ? "Ability resolving…" : "Moving…"}</p>;
               }
               // Buy/Decline takes priority over everything else -- it's the
               // action blocking the turn whenever it's pending.

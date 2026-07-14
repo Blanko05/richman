@@ -3,7 +3,7 @@
 // Passive: 30% bank-mediated cut of rent collected on his turf zone
 // (deducted from the property owner -- if D owns the tile himself, owner
 // and holder are the same player, so the add/subtract nets to zero and D
-// simply keeps the full rent as owner, no double-dip); 50% bank-mediated cut
+// simply keeps the full rent as owner, no double-dip); 30% bank-mediated cut
 // of any tax payment anywhere (bank absorbs -- tax has no player "earner" to
 // deduct from). Percentage cuts round down, same floor-biased convention
 // Room.js already uses for house-sale refunds/mortgage values.
@@ -22,17 +22,17 @@ export const don = {
   id: "D",
   activeName: "Barricade",
   description: "Places a wall on a tile that traps the first player who crosses it. Disappears when triggered, or by your next turn if it isn't.",
-  passiveDescription: "Takes a 30% cut of rent on his turf and 50% of every tax payment, board-wide.",
+  passiveDescription: "Takes a 30% cut of rent on his turf and 30% of every tax payment, board-wide.",
   cooldownLabel: "10 turns",
   targetType: "tile",
   activeCooldown: 10,
   passives: {
     onRentPaid(room, { holder, ownerId, tileId, rent }) {
       if (!TURF_TILES.has(tileId)) return;
-      room.bankMediatedCut(holder.id, Math.floor(rent * 0.3), ownerId);
+      room.bankMediatedCut(holder.id, Math.floor(rent * 0.3), ownerId, "turf rent cut");
     },
     onTaxPaid(room, { holder, amount }) {
-      room.bankMediatedCut(holder.id, Math.floor(amount * 0.5));
+      room.bankMediatedCut(holder.id, Math.floor(amount * 0.3), null, "tax cut");
     },
   },
   active(room, caster, { tileId } = {}) {

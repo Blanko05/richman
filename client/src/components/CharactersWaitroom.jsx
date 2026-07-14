@@ -26,11 +26,26 @@ export default function CharactersWaitroom({ state, myId, theme, onToggleTheme, 
   async function copyRoomCode() {
     const code = state.code;
     try {
+      // navigator.clipboard is only defined in secure contexts (https, or
+      // localhost) -- testing over a plain-http LAN IP (common when trying
+      // multiplayer from another device) leaves it undefined, and calling
+      // .writeText on it throws synchronously rather than rejecting, which
+      // silently broke the button with no fallback and no visible error.
       if (!navigator.clipboard || !window.isSecureContext) throw new Error("clipboard API unavailable");
       await navigator.clipboard.writeText(code);
     } catch {
-      // Fallback for non-secure contexts (e.g. plain-http LAN IP) -- a manual
-      // select-and-copy still works even though the Clipboard API doesn't.
+      // Legacy fallback: select the code in an offscreen textarea and use
+      // the old execCommand copy path, which works without the secure-
+      // context restriction.
+      const textarea = document.createElement("textarea");
+      textarea.value = code;
+      textarea.style.position = "fixed";
+      textarea.style.opacity = "0";
+      document.body.appendChild(textarea);
+      textarea.focus();
+      textarea.select();
+      try { document.execCommand("copy"); } catch { /* nothing more we can do */ }
+      document.body.removeChild(textarea);
     }
     setCodeCopied(true);
     setTimeout(() => setCodeCopied(false), 1500);

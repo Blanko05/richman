@@ -30,7 +30,7 @@ yet exposed over a socket event or given a lobby UI.
   Any rent collected on those three tiles pays D 30% of the amount, taken
   via the bank-mediated cut pattern (see below) — the payer owes the same
   rent as always, and the owner's earnings are the ones reduced.
-- Takes **50% of every tax payment** any other player makes, anywhere on the
+- Takes **30% of every tax payment** any other player makes, anywhere on the
   board, not just inside his turf. Bank-mediated — never an extra charge on
   the taxed player.
 
@@ -118,12 +118,15 @@ the table doesn't trade or get taxed.**
 - Claims a turf zone spanning the `salmonLeft` and `tealLeft` groups: tile
   37 (بابل), 38 (اربيل), 39 (كربلاء), 41 (بغداد), 44 (الطفيلة), 45 (السلط),
   47 (اربد). Does not overlap with D's zone (tiles 13/14/16).
-- Tracks landings on that zone across all players. Every **third landing**
+- Tracks landings on that zone across all players. Every **second landing**
   (a deterministic counter, not a random chance) triggers a **90% cut**,
   bank-mediated same as D's turf cut — the payer pays normal rent, and the
-  property owner's earnings are the ones reduced by 90%.
+  property owner's earnings are the ones reduced by 90%. (Buffed from every
+  third landing — playtesting found H the weakest character; a numbers-only
+  tweak, not a new mechanic.)
 
-**Active — Hostile Takeover, rechargeable, 6-turn static cooldown.**
+**Active — Hostile Takeover, rechargeable, 4-turn static cooldown.**
+(Buffed from 6 turns, same balance pass as the passive above.)
 
 - Takes control of any one tile until H's own next turn comes around (not a
   global round boundary — see "Round scoping" below), then it reverts.
@@ -212,14 +215,14 @@ one.
 
 - **D's turf rent cut (30%)** and **H's turf landing cut (90%)** — deducted
   from the property owner's earnings. Payer pays the same rent as always.
-- **D's tax cut (50%)** and **Z's tax cut (30%)** — a tax payment has no
+- **D's tax cut (30%)** and **Z's tax cut (30%)** — a tax payment has no
   player recipient (it goes to the bank), so nothing is deducted from any
   player; the bank simply absorbs the cut.
 - **Z's trade cut (30%)** — same reasoning as tax: no single player "earns"
   a trade, so the bank absorbs it.
 
 Multiple cuts on the same event stack independently and don't interact —
-e.g. a tax payment with both D and Z active pays out 50% + 30% = 80% from
+e.g. a tax payment with both D and Z active pays out 30% + 30% = 60% from
 the bank, on top of the taxpayer's unchanged tax bill.
 
 ## Round scoping
@@ -241,7 +244,7 @@ turn order they cast it.
 
 ## Resolved
 
-- **Tax stacking**: D's 50% and Z's 30% both apply to the same tax payment
+- **Tax stacking**: D's 30% and Z's 30% both apply to the same tax payment
   when both are in play, each independently bank-mediated. The taxed player
   pays the normal tax amount, unaffected either way.
 - **Bank-mediated cut pattern** established as the standard mechanism for

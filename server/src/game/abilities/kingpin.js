@@ -3,11 +3,14 @@
 // Passive: tracks every landing on his turf zone across all players, via
 // Room's onLanding hook (fires for every property/transit/utility landing,
 // regardless of ownership state) -- landingCount lives in H's own
-// abilityState so Room.js stays agnostic of it. Every 3rd landing (a
+// abilityState so Room.js stays agnostic of it. Every 2nd landing (a
 // deterministic counter, not a chance roll) triggers a 90% bank-mediated cut
 // -- but only when that specific landing actually produced rent (onRentPaid
-// only fires when rent is owed); a 3rd landing on an unowned/mortgaged/
+// only fires when rent is owed); a 2nd landing on an unowned/mortgaged/
 // self-owned tile still consumes the count, it just has nothing to cut.
+// Buffed from every 3rd landing (playtesting: H was the weakest character,
+// this passive's payout was too rare to matter) -- user's call, a
+// numbers-only tweak, not a new mechanic.
 //
 // Active: Hostile Takeover seizes any one ownable tile (not already his)
 // until H's own next turn comes around (not a global round boundary --
@@ -19,7 +22,9 @@
 // Hostile Takeover, seized-from side included. User's call: without this,
 // a build/mortgage made during the seizure window would silently vanish
 // (or hand the original owner an unexpected un-mortgage) the moment
-// revertHostileTakeover restores its pre-seizure snapshot.
+// revertHostileTakeover restores its pre-seizure snapshot. Cooldown buffed
+// from 6 turns to 4 (same balance pass as the passive above) so it's usable
+// more often, not just a once-in-a-while swing.
 import { TILE_TYPES } from "../board.js";
 
 const TURF_TILES = new Set([37, 38, 39, 41, 44, 45, 47]); // salmonLeft + tealLeft -- characters.md
@@ -29,10 +34,10 @@ export const kingpin = {
   id: "H",
   activeName: "Hostile Takeover",
   description: "Seizes a tile -- owned or not. Reverts to its previous owner on his next turn.",
-  passiveDescription: "Every 3rd landing on his turf triggers a 90% cut of that landing's rent.",
-  cooldownLabel: "6 turns",
+  passiveDescription: "Every 2nd landing on his turf triggers a 90% cut of that landing's rent.",
+  cooldownLabel: "4 turns",
   targetType: "tile",
-  activeCooldown: 6,
+  activeCooldown: 4,
   passives: {
     onLanding(room, { holder, tileId }) {
       if (!TURF_TILES.has(tileId)) return;
@@ -40,8 +45,8 @@ export const kingpin = {
     },
     onRentPaid(room, { holder, ownerId, tileId, rent }) {
       if (!TURF_TILES.has(tileId)) return;
-      if ((holder.abilityState.landingCount || 0) % 3 !== 0) return;
-      room.bankMediatedCut(holder.id, Math.floor(rent * 0.9), ownerId);
+      if ((holder.abilityState.landingCount || 0) % 2 !== 0) return;
+      room.bankMediatedCut(holder.id, Math.floor(rent * 0.9), ownerId, "turf landing cut");
     },
   },
   active(room, caster, { tileId } = {}) {

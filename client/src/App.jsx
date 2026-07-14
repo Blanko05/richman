@@ -116,20 +116,6 @@ function App() {
     if (state.players.every((p) => p.icon)) setStartError("");
   }, [state, startError]);
 
-  // A bankrupt player has no properties and no turn left to take (see
-  // Room.checkBankruptcy) -- the board's action zone has nothing valid to
-  // show them anymore, so send them back to the join screen the same way
-  // Leave already does, instead of leaving them stuck looking at
-  // now-meaningless End Turn/debt-warning controls. handleLeave's
-  // `leaveRoom` emit is a harmless no-op server-side for an already-
-  // bankrupt player (kickPlayer bails out immediately if `player.bankrupt`
-  // is already true) -- this doesn't double-penalize them, it just clears
-  // the local session/view.
-  useEffect(() => {
-    if (!state || !myId) return;
-    const me = state.players.find((p) => p.id === myId);
-    if (me?.bankrupt) handleLeave();
-  }, [state, myId]);
 
   // Accept/decline and buying a tile have no dedicated socket event of their
   // own that reaches every client (respondTrade/buyProperty only call back
@@ -229,7 +215,12 @@ function App() {
         prevPositions.set(p.id, p.position);
       });
       if (moved) setTokenMoving(true);
-      setState(s);
+      // Clock-skew correction (see Room.toState's serverNow comment) -- every
+      // countdown component that compares a server-issued absolute deadline
+      // against its own local Date.now() reads this off state.clockOffsetMs
+      // instead, so a client whose system clock disagrees with the server's
+      // still counts down accurately.
+      setState({ ...s, clockOffsetMs: s.serverNow ? s.serverNow - Date.now() : 0 });
     }
 
     socket.on("connect", handleConnect);
@@ -354,6 +345,14 @@ function App() {
     setSandboxIdentities(null);
     setTargeting(null);
     setAbilityError("");
+  }
+
+  // Voluntary forfeit -- unlike handleLeave, this does NOT clear the local
+  // session/reset to the lobby: a bankrupt player stays a real (non-`left`)
+  // seat server-side (Room.voluntaryBankrupt) specifically so they can keep
+  // watching the rest of the game play out, not get bounced out of the room.
+  function handleBankrupt() {
+    socket.emit("voluntaryBankrupt");
   }
 
   if (rejoining) {
@@ -531,6 +530,7 @@ function App() {
           abilityError={abilityError}
           onStartTargeting={startTargeting}
           onCancelTargeting={cancelTargeting}
+          tokenMoving={tokenMoving}
         />
         <MyProperties state={state} myId={myId} />
       </div>
@@ -549,6 +549,7 @@ function App() {
           state={state}
           myId={myId}
           onLeave={handleLeave}
+          onBankrupt={handleBankrupt}
           theme={theme}
           onToggleTheme={toggleTheme}
           tokenMoving={tokenMoving}

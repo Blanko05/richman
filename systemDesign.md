@@ -790,34 +790,43 @@ the next remaining active player automatically becomes host.
   `me.balance < 0` respectively — and the log feed.
   Every interactive control just emits a socket event; it never mutates
   local state directly.
-- `components/Trade.jsx` — rendered in the `Hud` whenever the game is
-  started and there's no winner yet. The give/get checkbox-and-coins
-  picker is its own `TradeForm` sub-component (`tradeableTiles()` computes
+- `components/OpenTrades.jsx` — right-panel "Trades" box, rendered whenever
+  the game is started. A "+ Create" button (hidden for a bankrupt viewer —
+  nothing left to trade) opens `TradeModal`'s create flow, above an
+  at-a-glance list of **every** open trade in the room, not just the
+  viewer's own — trades are public, visible to anyone, so the whole table
+  can watch a negotiation play out even between two other players.
+  Each row shows both parties (avatar + name, "(you)" suffixed if
+  applicable) and a countdown for a time-limited trade; incoming offers
+  glow in the sender's own color. A row that doesn't involve the viewer
+  gets a dimmed `.public` treatment so "yours" still reads as visually
+  distinct from "visible but not yours." Clicking any row opens that
+  trade's detail screen in `TradeModal` — read-only for a non-party,
+  interactive for the two actual parties.
+- `components/TradeModal.jsx` — the full trade UI: a menu of every open
+  trade plus a player list to start a new one, an editable `TradeForm`
+  (give/get checkbox-and-coins picker — `tradeableTiles()` computes
   tradeable tiles client-side — owned, undeveloped, **and unmortgaged** —
   mirroring the server's `isTradeable()` purely to avoid offering
   something that'll just get rejected; the server re-checks all of this
-  regardless, so this list is a UX nicety, never the actual authority. An
-  earlier version of this filter omitted the mortgaged check, letting the
-  form show a mortgaged property as selectable when the server would
-  always reject trading it — fixed to match the server's predicate
-  exactly), reused in two places: the collapsible
-  "Propose a trade" panel (target player + the form), and an inline
-  "Counter" form on each incoming offer (`IncomingTradeCard`, target fixed
-  to the original proposer). Incoming offers show Accept/Decline/Counter;
-  clicking Counter swaps in the `TradeForm` in place of those three
-  buttons rather than opening a separate dialog. Outgoing offers show
-  Cancel. A `counterOf` field on a trade renders as a small "counter
-  -offer" badge in `TradeSummary`, purely cosmetic. Like every other
-  control, it only emits events (`proposeTrade`/`counterTrade`
-  /`respondTrade`/`cancelTrade`) and renders whatever `state.trades`
-  comes back. The two coin amounts ("you give" / "you get") are sliders,
-  not typed numbers — each is capped at `0` to the relevant player's
-  actual current balance (`players` is now threaded into every `TradeForm`
-  call site specifically so it can look these up), clamped to `0` rather
-  than going negative if that player is currently in debt. This both makes
-  picking an amount faster and structurally prevents ever submitting an
-  offer the server would reject as unaffordable, since the slider simply
-  can't be dragged past what the relevant player has.
+  regardless, so this list is a UX nicety, never the actual authority) used
+  for both proposing a fresh trade and countering an existing one, and a
+  read-only `TradeView` for an existing trade's detail screen. `TradeView`
+  renders from whoever's looking at it: the two actual parties always see
+  themselves on the left ("You give"/"You get" — the proposer gets Cancel,
+  the recipient gets Accept/Decline/Counter), while anyone else in the room
+  sees a neutral fromId-on-the-left layout with no "you" framing and no
+  action buttons, just a note naming the two players who can actually act
+  on it. A `counterOf` field on a trade renders as a small "counter-offer"
+  badge, purely cosmetic. Every control just emits an event
+  (`proposeTrade`/`counterTrade`/`respondTrade`/`cancelTrade`) and renders
+  whatever `state.trades` comes back — never mutates local state directly.
+  The two coin amounts ("you give"/"you get") are sliders, not typed
+  numbers — each capped at `0` to the relevant player's actual current
+  balance (clamped to `0` rather than going negative if that player is
+  currently in debt), which both makes picking an amount faster and
+  structurally prevents ever submitting an offer the server would reject
+  as unaffordable.
 - `components/AuctionModal.jsx` — mounted unconditionally in `App.jsx`,
   self-gating on whether any auction is live. Lists every entry in
   `state.auctions`, **not turn-gated** — any active player can bid on any
